@@ -1,0 +1,58 @@
+{
+  "name": "vaan",
+  "version": "0.1.0",
+  "description": "A local-first AI agent for your terminal. Think. Remember. Act. Observe.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/balagurunilacandane/looplet.git"
+  },
+  "homepage": "https://github.com/balagurunilacandane/looplet#readme",
+  "bugs": {
+    "url": "https://github.com/balagurunilacandane/looplet/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "vaan": "./dist/src/cli/main.js"
+  },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/src",
+    "scripts/postinstall.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node scripts/test.js",
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "agent",
+    "cli",
+    "llm",
+    "claude",
+    "openai",
+    "gemini",
+    "ollama",
+    "memory",
+    "sandbox",
+    "permissions",
+    "observability"
+  ]
+}

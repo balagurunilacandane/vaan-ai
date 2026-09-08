@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # npm ci runs the postinstall FTS5 probe, so a native module that built
+      # without FTS5 fails here rather than at a user's first question.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  musl:
+    name: alpine (musl)
+    runs-on: ubuntu-latest
+    container: node:22-alpine
+    steps:
+      - uses: actions/checkout@v4
+      # CONTRIBUTING accepts node-gyp risk on musl. Prove it rather than assert it:
+      # this is where prebuilds are most likely to be missing.
+      - run: apk add --no-cache build-base python3 git
+      - run: npm ci
+      - run: npm test
+
+  smoke:
+    name: pack and install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # The failure users actually hit is "npx vaan did nothing useful", and
+      # none of the jobs above would catch a bad `files` list or a broken bin
+      # path. Install the tarball somewhere clean and run the binary.
+      - run: npm pack --pack-destination /tmp
+      - name: install the tarball in a clean directory
+        run: |
+          mkdir /tmp/clean && cd /tmp/clean
+          npm init -y
+          npm install /tmp/vaan-*.tgz
+          ./node_modules/.bin/vaan --version
+          ./node_modules/.bin/vaan --help | grep -q "Vaan 0.1.0"
+      - name: it refuses to hang when stdin is not a terminal
+        run: |
+          cd /tmp/clean
+          set +e
+          echo "hello" | ./node_modules/.bin/vaan
+          test $? -ne 0 || (echo "expected a non-zero exit on piped stdin" && exit 1)
