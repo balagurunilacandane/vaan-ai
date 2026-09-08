@@ -33,7 +33,7 @@ import { INSTALL_HINT, launchCommand, viaNpx } from "../invocation.js";
 import { updateEnvFile } from "./dotenv.js";
 import { CUSTOM_NOTE, DEFAULT_MODEL, SUGGESTED } from "./suggested.js";
 
-export const VERSION = "0.1.1";
+export const VERSION = "0.1.2";
 
 export interface WizardOptions {
   /** Where Vaan was launched. Step one can move it. */
