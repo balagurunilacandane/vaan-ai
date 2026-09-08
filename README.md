@@ -25,20 +25,33 @@ You
 ## 🚀 Get Started
 
 ```bash
-git clone https://github.com/balagurunilacandane/vaan-ai.git
-cd vaan-ai && npm install && npm run build && npm link
+npx vaan-ai
 ```
 
-Then, from any project:
+That's it.
+
+Or install it once and use it everywhere:
+
+```bash
+npm install -g vaan-ai
+```
 
 ```bash
 cd ~/projects/my-app
 vaan
 ```
 
-That's it.
+The package is `vaan-ai`; the command it gives you is `vaan`.
 
-> **Not on npm yet.** Once the first release is published this becomes `npx vaan`.
+<details>
+<summary>From source</summary>
+
+```bash
+git clone https://github.com/balagurunilacandane/vaan-ai.git
+cd vaan-ai && npm install && npm run build && npm link
+```
+
+</details>
 
 **What you need**
 
