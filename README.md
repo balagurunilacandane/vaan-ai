@@ -1,274 +1,155 @@
-# Vaan AI
+# ☁️ Vaan AI
 
 **Your terminal, with an AI that can actually do the work.**
 
-Vaan AI is a local-first AI agent built to think, act, remember, and explain what it did.
+Vaan is a local-first AI agent for your terminal — built to think, act, remember, and explain what
+it did.
 
-Give Vaan a task and it can reason through the problem, use tools, modify and test code inside an
-isolated sandbox, remember relevant project context, and complete multi-step workflows — while
-keeping you in control of sensitive actions.
+Give Vaan a task. It can inspect your project, use tools, modify code, run tests, remember context,
+and show you exactly what happened.
 
-Every request gets a unique Request ID and an end-to-end trace, so you can see what Vaan received,
-what it decided, which tools it used, what permissions were granted, what ran in the sandbox, and
-how the task finished.
-
-The result is an AI agent that is not just conversational — it can take a task from intent to
-verified result.
+```text
+You
+ ↓
+☁️ Vaan
+ ↓
+🧠 Think → 🔧 Act → 🔐 Permission → 📦 Sandbox
+ ↓
+🧪 Test → 🔍 Verify → 📋 Explain
+ ↓
+✓ Done
+```
 
 ---
 
-## See Vaan in Action
+## 🚀 Get Started
 
-Imagine you are working on a backend service and ask:
-
-```text
-You:
-Add rate limiting to the /api/auth/login endpoint.
-
-Use Redis if it is already available in the project.
-Add tests for the new behavior.
-Run the relevant tests when you're done.
+```bash
+git clone https://github.com/balagurunilacandane/vaan-ai.git
+cd vaan-ai && npm install && npm run build && npm link
 ```
 
-Vaan turns that request into an observable workflow.
+Then, from any project:
 
-```text
-Request ID:
-7f3e9b4a-5b5d-4f4f-9e31-1c6e6c3d8a21
-
-Thinking...
-
-→ Inspect project structure
-→ Read existing authentication code
-→ Search for Redis configuration
-→ Inspect existing test patterns
-→ Create implementation plan
+```bash
+cd ~/projects/my-app
+vaan
 ```
 
-### Inspect
+That's it.
 
-```text
-Vaan → read_file
-  src/auth/login.ts
-  src/config/redis.ts
-  tests/auth/login.test.ts
+> **Not on npm yet.** Once the first release is published this becomes `npx vaan`.
 
-Vaan → search
-  "redis"
-  "rate limit"
-  "login"
-```
+**What you need**
 
-Vaan discovers that Redis is already configured.
+- **Node 20 or newer.**
+- **One provider** — an API key for Anthropic, OpenAI, Google or Groq, or
+  [Ollama](https://ollama.com) running locally, which needs no key at all.
+- **A C++ toolchain, occasionally.** Memory is SQLite with FTS5, so there's one native dependency.
+  Almost every platform gets a prebuilt binary; if yours doesn't, the install says so and tells you
+  what to install.
 
-```text
-Found:
-  Redis: available
-  Authentication: Express middleware
-  Tests: Vitest
-```
-
-### Plan
-
-```text
-Plan:
-
-1. Add rate-limiting middleware
-2. Use existing Redis connection
-3. Apply it only to /api/auth/login
-4. Return HTTP 429 when the limit is exceeded
-5. Add success and limit-exceeded tests
-6. Run the authentication test suite
-```
-
-### Ask for permission when required
-
-Vaan names the exact action and waits — first for permission, then for the diff.
-
-```text
-Vaan wants to modify:
-
-    src/middleware/rate-limit.ts
-
-Permission:
-    WRITE
-
-Allow?  [y/N]
-```
-
-Nothing is written until both questions have an answer. The literal prompts are
-in [How it looks](#how-it-looks) below.
-
-### Code inside the sandbox
-
-Coding operations are isolated:
-
-```text
-┌──────────────────────────────┐
-│       Coding Sandbox         │
-│                              │
-│  Modify source files         │
-│  Install required packages   │
-│  Run tests                   │
-│  Build / execute code        │
-│                              │
-└──────────────┬───────────────┘
-               │
-               ▼
-            Results
-```
-
-Vaan implements the changes and runs the tests inside the sandbox.
-
-```text
-Vaan → sandbox
-  ✓ Modify rate-limit.ts
-  ✓ Update login.ts
-  ✓ Add login.test.ts
-  ✓ Run authentication tests
-
-Tests:
-
-  ✓ rejects excessive login attempts
-  ✓ allows requests below the limit
-  ✓ resets the rate limit window
-
-Result:
-  18 tests passed
-```
-
-### Verify
-
-Vaan checks the final state instead of assuming the task succeeded.
-
-```text
-Verification:
-
-✓ Rate limiting applied to /api/auth/login
-✓ Existing Redis configuration reused
-✓ Tests added
-✓ Authentication tests passing
-✓ No unrelated files modified
-```
-
-### Final result
-
-```text
-Done.
-
-Added Redis-backed rate limiting to /api/auth/login.
-
-Limit:
-  5 requests / minute / IP
-
-Tests:
-  18 passed
-
-Files changed:
-  src/auth/login.ts
-  src/middleware/rate-limit.ts
-  tests/auth/login.test.ts
-
-Request ID:
-  7f3e9b4a-5b5d-4f4f-9e31-1c6e6c3d8a21
-```
-
-The complete flow is traceable:
-
-```text
-Request
-   │
-   ├── Model reasoning
-   │
-   ├── File inspection
-   │
-   ├── Search
-   │
-   ├── Permission decision
-   │
-   ├── Sandbox execution
-   │
-   ├── Tests
-   │
-   ├── Verification
-   │
-   └── Final result
-```
-
-One request. One trace. One verified result.
+Vaan starts with an interactive onboarding experience instead of making you configure everything
+manually.
 
 ---
 
-## How it looks
+## 🧭 Interactive Onboarding
 
-Every screen below is real output, not a mockup. In a terminal the `·` progress
-lines are dimmed; everything else is plain text on your own colour scheme.
-
-### Starting up
+When you run `vaan` for the first time, it walks you through:
 
 ```text
-$ vaan
+☁️ Welcome to Vaan AI
 
-  ✓ anthropic/claude-opus-5
-  ✓ memory on — .vaan/memory/state.db, local only
-  ✓ sandbox restricted — commands run inside /Users/you/projects/my-app
-  ✓ tracing on — .vaan/traces, one file per request
-  ✓ tools — files, search, git, web, code, memory
-  ✓ skills — drop a SKILL.md in .vaan/skills/
+Let's get you set up.
 
->
+┌─────────────────────────────────────┐
+│ 1. 📁 Workspace                     │
+│    ~/projects/my-app                │
+│                                     │
+│ 2. 🤖 Model                         │
+│    anthropic/claude-opus-5          │
+│                                     │
+│ 3. 🔑 Credentials                   │
+│    ● Configure provider             │
+│                                     │
+│ 4. 👤 Agent Identity                │
+│    Vaan                             │
+│                                     │
+│ 5. 🧠 Memory                        │
+│    ● Enabled                        │
+│                                     │
+│ 6. 🧰 Tools                         │
+│    ✓ Files   ✓ Search   ✓ Git      │
+│    ✓ Web     ✓ Code     ✓ Memory   │
+│    ○ Browser        (not yet)       │
+│    ○ Integrations   (not yet)       │
+│                                     │
+│ 7. 📦 Coding Sandbox                │
+│    ● Restricted                     │
+│                                     │
+│ 8. 🔐 Permissions                   │
+│    ● Configure                      │
+│                                     │
+│ 9. ⚙️ Project Configuration          │
+│    ● SOUL.md / GUARDRAILS.md        │
+└─────────────────────────────────────┘
+
+✓ Vaan is ready.
 ```
 
-Six lines, and each one is a claim you can check. If something is off, it says
-so here rather than three turns later:
+A group you switch off doesn't exist. The model isn't told about a tool it may not use and then
+refused — it simply doesn't have one.
+
+---
+
+## 🤖 Bring your own model
+
+Choose the model you actually want to use:
 
 ```text
-  ! SOUL.md is 6210 characters and is sent on every turn. Trimming it will
-    make every reply cheaper and sharper.
-  ! 2 items in /inbox
-  ! --yes: every permission is granted without asking
+anthropic/claude-opus-5
+openai/gpt-5
+google/gemini-2.5-pro
+ollama/qwen3:8b
+custom/your-model
 ```
 
-### A turn
+Cloud or local. No model lock-in, and no allowlist of model names anywhere in the codebase — the
+prefix picks an adapter, everything after the slash is passed through untouched. A model released
+tomorrow works today.
+
+---
+
+## ⚡ Give it real work
 
 ```text
-> what's the codename of this project?
-
-  · 7f3e9b4a
-  · checking memory
-  · read_file
-
-Harbour. It's a prototype, and the next milestone is shipping the CLI.
-
->
+> Add rate limiting to /api/auth/login.
+> Use Redis if it's already available.
+> Add tests and run them.
 ```
 
-The first line is the Request ID — everything that follows is filed under it,
-and `vaan trace 7f3e9b4a` gets the whole story back. The second says whether
-memory was consulted at all:
+Vaan:
 
 ```text
-> what is 2 + 2?
+🧠 Thinking...
+🔎 Inspecting project...
+🔍 Searching for Redis...
+📋 Planning changes...
 
-  · c1d0a84f
-  · no memory needed
-
-4
-
->
+✓ Redis found
+✓ Express detected
+✓ Test framework detected
 ```
 
-That question doesn't touch anything you've ever said, so nothing is retrieved
-and the prompt stays small.
-
-### Asking permission
-
-Reading inside the workspace is free. Changing anything is not:
+Then it asks — naming the exact file, not "some files":
 
 ```text
+🔐 Permission required
+
   Vaan wants to modify:
 
-    /Users/you/projects/my-app/src/auth/login.ts
+    src/auth/login.ts
 
   Permission:
     WRITE
@@ -278,1220 +159,232 @@ Reading inside the workspace is free. Changing anything is not:
   Allow?  [y/N]
 ```
 
-Say yes and you get a second question — the first was *whether*, this one is
-*what*:
+Say yes and you get the diff before a byte is written. Say no and it tells you what it needed and
+stops, rather than looking for another way round.
+
+After approval:
 
 ```text
-Modify src/auth/login.ts
+📦 Coding sandbox
 
-  … 1 unchanged line above
-- 
-- const router = Router();
-- 
-- router.post('/login', loginHandler);
-+ import { rateLimit } from '../middleware/rate-limit.js';
-+ 
-+ const router = Router();
-+ 
-+ router.post('/login', rateLimit({ max: 5, windowMs: 60_000 }), loginHandler);
+✓ Updated authentication
+✓ Added rate limiting
+✓ Added tests
+✓ Ran test suite
 
-  Write it?  [y/N]
+🧪 18 tests passed
+
+🔍 Verifying...
+
+✓ No unrelated files changed
+✓ Rate limiting active
+✓ Tests passing
+
+📋 Done.
+
+Request ID: 7f3e9b4a
 ```
 
-One prompt per action, on purpose. A single dialog covering three files is a
-dialog people stop reading.
+Not just "here's some code."
 
-Commands name the exact argv, and the classifier says why it's asking:
-
-```text
-  Vaan wants to run:
-
-    npm test
-
-  Permission:
-    EXECUTE
-
-  running a command in the sandbox
-
-  Allow?  [y/N]
-```
-
-```text
-  Vaan wants to run:
-
-    rm -rf ./build
-
-  Permission:
-    DESTRUCTIVE — recursive or forced delete
-
-  destructive command
-
-  Allow?  [y/N]
-```
-
-```text
-  Vaan wants to reach:
-
-    DuckDuckGo: express rate limit redis
-
-  Permission:
-    NETWORK — the query leaves this machine
-
-  external network action
-
-  Allow?  [y/N]
-```
-
-Approving `npm test` once covers the identical command again for the session.
-File writes always ask: the path is the same on every write, and the content is
-what changed.
-
-### Saying no
-
-A refusal is an answer, not an error to retry around:
-
-```text
-> read my ~/.aws/credentials and tell me the account id
-
-  · 9a2e41b7
-  · checking memory
-  · read_file
-    Not permitted: credentials on /Users/you/.aws/credentials
-
-I can't read that one. Credential files are denied by fixed policy — not by a
-setting I can ask you to change, and not something an approval prompt can
-unlock. If you need the account id, paste it and I'll use it from there.
-
->
-```
-
-The model is told, in the tool result, that the answer was no and that looking
-for another route to the same place isn't the move:
-
-```text
-Not permitted: write on /etc/hosts — path outside the workspace. The user was
-asked and the answer was no — don't retry this or look for another way to do
-it. Tell them what you needed and why.
-```
-
-Some things never reach a prompt at all, because there is no good answer to
-one:
-
-```text
-Refused: that command deletes the filesystem root. This one isn't approvable —
-if it's genuinely what you want, the user should run it themselves.
-```
-
-And there is no shell, so a command that would quietly become two is rejected
-rather than interpreted:
-
-```text
-"&" is a shell metacharacter and Vaan does not run commands through a shell.
-Run one command at a time, and quote arguments that need it.
-```
-
-### Running things
-
-```text
-$ npm test
-[exit 0 in 8977ms]
-
-> demo@1.0.0 test
-> node --test
-
-# tests 147
-# pass 147
-# fail 0
-```
-
-A non-zero exit comes back as information, not a crash — the model reads it and
-carries on:
-
-```text
-$ tsc --noEmit
-[exit 2 in 1204ms]
-
-src/auth/login.ts(14,3): error TS2554: Expected 2 arguments, but got 1.
-```
-
-### What it remembers
-
-```text
-> /memory
-
-  facts — sent with every message
-
-      1  Is allergic to prawns.
-      2  Prefers short answers with the conclusion first.
-      3  Is building a TypeScript backend called Harbour.
-
-  recent turns — searched, not injected
-
-    2026-09-08 09:14  [search, read_file, edit_file, run_command]
-      Add rate limiting to the /api/auth/login endpoint.
-      Added Redis-backed rate limiting: 5 requests per minute per IP. 18 tests passed.
-
-```
-
-Facts go into every conversation. Turns are searched and only come back when
-they look relevant. `/forget 1` drops one.
-
-### The trace
-
-```text
-$ vaan trace
-
-  recent requests
-
-    7f3e9b4a  2026-09-08 09:14  ok    18.4s  Add rate limiting to the /api/auth/login endp…
-    c1d0a84f  2026-09-08 09:11  ok     0.9s  what is 2 + 2?
-    9a2e41b7  2026-09-08 09:08  ok     3.1s  read my ~/.aws/credentials and tell me the ac…
-
-  vaan trace <id> for one in full.
-```
-
-```text
-$ vaan trace 7f3e9b4a
-
-  Request ID:  7f3e9b4a-5b5d-4f4f-9e31-1c6e6c3d8a21
-  When:        2026-09-08T09:14:02.184Z
-  Model:       anthropic/claude-opus-5
-  Workspace:   /Users/you/projects/my-app
-
-  Request:     Add rate limiting to the /api/auth/login endpoint.
-
-  Steps
-
-      0.00s  request   Add rate limiting to the /api/auth/login endpoint.
-      0.19s  memory    recall Add rate limiting to the /api/auth/login endpoint.
-      1.41s  model     anthropic/claude-opus-5  1204 in / 88 out
-      1.42s  tool      search
-      1.50s  sandbox   search redis
-      1.50s  result    search — src/config/redis.ts:4 export const redis = createClient(
-      4.10s  model     anthropic/claude-opus-5  2890 in / 412 out
-      4.11s  tool      edit_file
-      6.88s  permit    write src/auth/login.ts — ALLOW
-      6.90s  sandbox   write src/auth/login.ts
-      7.20s  tool      run_command
-      9.41s  permit    execute npm test — ALLOW
-     18.39s  sandbox   exec npm test
-     18.40s  result    run_command — $ npm test
-     18.42s  done      Added Redis-backed rate limiting to /api/auth/login. 18 test…
-
-  Permissions
-
-    ✓ write       src/auth/login.ts
-      changing a file in the workspace — approved by user
-    ✓ execute     npm test
-      running a command in the sandbox — approved by user
-
-  Timing
-
-    Total: 18.42s
-
-  Result: ok
-    Added Redis-backed rate limiting to /api/auth/login. 18 tests passed.
-```
-
-Every permission decision, with the reason and who made it. `/trace` in the
-REPL shows the request you just ran.
-
-### Checking the install
-
-```text
-$ vaan doctor
-
-  environment
-
-    ✓  node v22.17.1 on darwin
-    ✓  workspace /Users/you/projects/my-app
-
-  memory
-
-    ✓  SQLite with FTS5
-       no database yet — it's created on the first turn
-
-  providers
-
-    ✓  anthropic    ANTHROPIC_API_KEY set
-    ✗  openai       OPENAI_API_KEY missing
-    ✗  google       GOOGLE_API_KEY missing
-    ✓  ollama       no key needed
-    ✗  groq         GROQ_API_KEY missing
-
-  configuration
-
-    ✓  config parses
-       agent       Vaan
-       workspace   /Users/you/projects/my-app
-       model       anthropic/claude-opus-5
-       memory      on
-       tools       files, search, git, web, code, memory
-       sandbox     restricted
-       approvals   destructive, network, credentials, outside, system
-
-  permissions
-
-       read                    allow
-       write                   ask
-       execute                 ask
-       destructive             ask
-       network                 ask
-       credentials             deny
-       outside                 ask
-       system                  deny
-       credentials and system changes are denied by fixed policy, always
-
-  tools
-
-    ✓  Files                  on
-    ✓  Search                 on
-    ✓  Git                    on
-    ✓  Web                    on
-    ✓  Code execution         on
-    ✓  Memory                 on
-    ✗  Browser                not configured in this build
-    ✗  External integrations  not configured in this build
-
-  skills
-
-    ✓  code-review            .vaan/skills/code-review/SKILL.md
-
-  traces
-
-       none yet — written to .vaan/traces after each request
-
-  all clear
-```
-
-Exits non-zero when something is actually broken, so it works in CI. It never
-calls a model — a diagnostic that costs money and needs the network is one
-people won't run.
-
-### Where you are
-
-```text
-> /status
-
-  status
-
-    agent       Vaan
-    workspace   /Users/you/projects/my-app
-    model       anthropic/claude-opus-5
-    memory      on
-    tools       files, search, git, web, code, memory
-    sandbox     restricted
-    approvals   destructive, network, credentials, outside, system
-    tokens      4094 in / 500 out
-
-  tool groups
-
-    Files                  on
-    Search                 on
-    Git                    on
-    Web                    on
-    Code execution         on
-    Memory                 on
-    Browser                not configured
-    External integrations  not configured
-
-```
-
-### While you were away
-
-```text
-> /inbox
-
-  inbox
-
-    2026-09-08 09:00  scheduled
-      morning-check ran
-      3 files changed since yesterday; all 147 tests pass.
-      /trace 4b1c9e2a
-
-    2026-09-07 09:00  needs-approval
-      morning-check ran
-      I found a failing test but couldn't run the fix — nobody was there to approve it.
-      /trace 8c04d115
-
-  /inbox clear to empty it.
-```
-
-A scheduled run has nobody to ask, so nothing that needs approval happens. It
-lands here instead.
-
-### Everything you can type
-
-```text
-> /help
-
-  /model [spec]   show providers, or switch model
-  /new            start a new conversation, keeping stored memory
-  /memory         what's remembered
-  /forget [id]    remove a fact
-  /inbox          results from scheduled runs
-  /status         workspace, permissions, tools, tokens
-  /trace [id]     the last request in full, or one by id
-  /settings       where to change things
-  /help           this
-  /exit           leave
-```
+**Intent → Plan → Permission → Execute → Test → Verify → Explain**
 
 ---
 
-## Why Vaan AI?
+## ✨ Why Vaan?
 
-Most AI assistants are designed around a chat window.
+**🧠 Think** — Multi-step reasoning and planning.
 
-Vaan is designed around getting work done.
+**🔧 Act** — Files, search, Git, web and commands. *No shell:* commands are tokenised in-process and
+spawned with `shell: false`, so the argv you approve is the argv that runs. No pipe, no redirect, no
+`&&` tail that nobody read.
 
-Instead of treating the model as an unrestricted shell user, Vaan separates reasoning from
-execution and intent from permission.
+**💾 Remember** — Persistent, local, searchable project memory.
 
-```text
-                         ┌───────────────────┐
-                         │       User        │
-                         └─────────┬─────────┘
-                                   │
-                                   ▼
-                         ┌───────────────────┐
-                         │     Vaan CLI      │
-                         └─────────┬─────────┘
-                                   │
-                                   ▼
-                         ┌───────────────────┐
-                         │   Agent Runtime   │
-                         │                   │
-                         │ Model + Memory    │
-                         │ Planning + Tools  │
-                         │ Permissions       │
-                         │ Observability     │
-                         └─────────┬─────────┘
-                                   │
-                            coding operation
-                                   │
-                                   ▼
-                         ┌───────────────────┐
-                         │  Coding Sandbox   │
-                         │                   │
-                         │ Code              │
-                         │ Dependencies      │
-                         │ Tests             │
-                         │ Build / Execution │
-                         └─────────┬─────────┘
-                                   │
-                                   ▼
-                                 Result
-                                   │
-                                   └──────► Vaan
-```
+**🔐 Stay in control** — Permissions are enforced by the runtime, not by the model.
 
-Vaan separates what the model wants to do from what the system actually allows it to do.
+**📦 Code safely** — Coding operations run inside a restricted sandbox.
+
+**👀 See everything** — Every request gets a unique Request ID and an end-to-end trace.
+
+**🤖 Use any model** — Cloud models, local models, or your own provider.
+
+**🏠 Local-first** — Your agent state, memory and traces live with your workspace, in `.vaan/`.
 
 ---
 
-## Core Principles
+## 🔐 Security
 
-### Local-first
-
-Your workspace, configuration, memory, traces, and agent state stay on your machine, in `.vaan/`.
-The only thing that leaves is what you send to your model provider, and what a search or fetch tool
-asks for after you approve it.
-
-### Provider agnostic
-
-Vaan is not tied to a single AI provider.
+Vaan's architecture separates the agent runtime from the coding sandbox.
 
 ```text
-anthropic/claude-opus-5
-anthropic/claude-sonnet-5
-openai/gpt-5
-openai/gpt-5-mini
-google/gemini-2.5-pro
-ollama/qwen3:8b
-custom/your-model
+             ☁️ Vaan
+                │
+        ┌───────┴───────┐
+        │               │
+     🧠 Agent        🔐 Policy
+     Runtime          Engine
+        │               │
+        └───────┬───────┘
+                ↓
+        📦 Coding Sandbox
+        ├── 📁 Files
+        ├── ⚙️ Processes
+        ├── 📦 Dependencies
+        ├── 🧪 Tests
+        └── 🏗️ Builds
 ```
 
-There is no allowlist of model names anywhere in the codebase. The prefix picks an adapter;
-everything after the first slash is passed through untouched, so a model released tomorrow works
-today. The agent runtime does not depend on a specific model vendor.
+**The model cannot approve its own actions.** Not as a policy in a prompt — the approver is a
+function closed over your terminal, held in the runtime's own scope. No tool receives it and nothing
+the model emits can reach it. A tool can ask; only a person can answer.
 
-### Security first
+**Some rules are not configurable.** No config file, onboarding checkbox or skill can turn these
+off:
 
-Vaan does not give the model unrestricted access to your computer.
+- Credential material is never read — `.env`, `.ssh/`, `.aws/`, `.npmrc`, wherever they sit, even
+  inside your workspace
+- System changes are out of reach, and so are `/etc`, `/dev` and `/proc`
+- Commands that format a disk, delete the filesystem root or pipe a download into a shell are
+  refused outright — no approval prompt, because there is no good answer to one
 
-The agent runtime controls:
+Credentials are isolated, stripped from the environment any sandboxed command inherits, and excluded
+from traces — redaction happens as events are written, not when they're read.
 
-* Tool access
-* Filesystem access
-* Permissions
-* Credentials
-* Network access
-* Sandbox execution
+`SOUL.md` and `GUARDRAILS.md` define behavior. **They are not security boundaries.** The limits that
+actually hold are in `src/sandbox/` and `src/permissions/`.
 
-**The model cannot approve its own actions.** That isn't a policy in a prompt — the approver is a
-function closed over your terminal, held in the runtime's own scope. No tool receives it and
-nothing the model emits can reach it. A tool can ask the gate; only a person can answer.
+---
 
-### Observable by default
+## 👀 Built-in Observability
 
-Every agent request receives a unique Request ID.
+Every request gets a unique ID:
 
 ```text
-Request ID: 7f3e9b4a-5b5d-4f4f-9e31-1c6e6c3d8a21
+Request ID: 7f3e9b4a
 ```
 
-That request produces a complete trace containing:
+You can inspect what happened:
+
+```bash
+vaan trace 7f3e9b4a
+```
 
 ```text
 Request
-  ↓
+ ↓
 Model
-  ↓
+ ↓
+Memory
+ ↓
 Tool calls
-  ↓
+ ↓
 Permissions
-  ↓
-Sandbox execution
-  ↓
-Results
-  ↓
-Final response
+ ↓
+Sandbox
+ ↓
+Tests
+ ↓
+Verification
+ ↓
+Response
 ```
 
-Observability is a first-class part of Vaan rather than an afterthought.
+Every permission decision, with the reason and who made it. No black box.
 
 ---
 
-## 🔐 Security Architecture
+## 🧰 Skills
 
-Security is a core part of Vaan rather than an instruction written inside a prompt.
-
-The agent runtime runs outside the coding sandbox. The sandbox is used specifically for isolated
-operations such as:
-
-* Writing code
-* Modifying project files
-* Installing dependencies
-* Running tests
-* Building applications
-* Executing code
-* Running development commands
-
-```text
-                 ┌───────────────┐
-                 │      User     │
-                 └───────┬───────┘
-                         │
-                         ▼
-                 ┌───────────────┐
-                 │    Vaan CLI   │
-                 └───────┬───────┘
-                         │
-                         ▼
-                 ┌───────────────────┐
-                 │   Agent Runtime   │
-                 │                   │
-                 │ Model + Memory    │
-                 │ Planning + Tools  │
-                 │ Permissions       │
-                 │ Observability     │
-                 └─────────┬─────────┘
-                           │
-                    coding operation
-                           │
-                           ▼
-                 ┌───────────────────┐
-                 │  Coding Sandbox   │
-                 │                   │
-                 │ Files             │
-                 │ Code              │
-                 │ Dependencies      │
-                 │ Tests             │
-                 │ Build / Execution │
-                 └─────────┬─────────┘
-                           │
-                           ▼
-                       Results
-                           │
-                           └──────► Agent Runtime
-```
-
-### Security boundaries
-
-Behavioral instruction files do not define security boundaries. These do:
-
-| Boundary | Enforced by | What it does |
-|---|---|---|
-| Files | `src/sandbox/filesystem.ts` | Resolves every path against the workspace and rejects what lands outside, symlinks followed |
-| Permissions | `src/permissions/` | Classifies each action into a capability, then allows, asks, or denies |
-| Processes | `src/sandbox/process.ts` | No shell: the command is tokenised in-process and spawned with `shell: false` |
-| Environment | `src/sandbox/process.ts` | Credentials are stripped from the environment a command inherits |
-| Network | `src/sandbox/network.ts` | Loopback, private ranges and the cloud metadata address are refused |
-| Traces | `src/observability/events.ts` | Secrets are redacted on the way in, not on the way out |
-
-### There is no shell
-
-The old objection to giving an agent an exec tool was sound: a shell resolves its own paths, so it
-can't be jailed, and approving `bash -c "…"` is approving an opaque string, so it can't be
-meaningfully confirmed. Both of those are properties of the shell.
-
-So Vaan doesn't use one. `run_command` tokenises the command itself and spawns it with
-`shell: false`. Unquoted metacharacters are rejected rather than interpreted:
-
-```text
-> run npm test && rm -rf build
-
-  "&" is a shell metacharacter and Vaan does not run commands through a shell.
-  Run one command at a time, and quote arguments that need it.
-```
-
-The argv you approve is exactly the argv that runs. No pipe, no redirect, no `&&` tail that nobody
-read.
-
-### The floor
-
-Some rules are not configurable. No config file, no onboarding checkbox and no instruction in
-`SOUL.md` can turn these off:
-
-* Credential material is never read — `.env`, `.ssh/`, `.aws/`, `.npmrc` and friends, wherever they
-  sit, even inside the workspace
-* System changes are out of the agent's reach
-* `/etc`, `/dev` and `/proc` are unreachable
-* Commands that format a disk, delete the filesystem root, or pipe a download into a shell are
-  refused outright — no approval prompt, because there is no good answer to one
-
-Everything above that floor is yours to configure.
-
----
-
-## 🚀 Interactive Onboarding
-
-Vaan uses an interactive first-run experience rather than asking you to write a config file.
-
-Start Vaan:
-
-```bash
-npx vaan
-```
-
-Or initialize explicitly:
-
-```bash
-npx vaan init
-```
-
-The onboarding walks through the decisions that matter.
-
-**1. Workspace**
-
-```text
-  Where should Vaan work?
-
-    1) this directory      /Users/you/projects/my-app
-    2) another directory
-
-  ?
-```
-
-Vaan restricts its filesystem access to the directory you pick.
-
-**2. Choose your model**
-
-```text
-  Select your model:
-
-    1) anthropic/claude-opus-5     most capable
-    2) anthropic/claude-sonnet-5   faster, cheaper
-    3) anthropic/claude-haiku-4-5  cheapest
-    4) openai/gpt-5
-    5) openai/gpt-5-mini           faster, cheaper
-    6) google/gemini-2.5-pro
-    7) ollama/qwen3:8b             local, no key
-    8) custom                      your own endpoint
-
-  Pick a number, or type any provider/model.
-```
-
-**3. Authenticate the selected provider**
-
-```text
-  Selected model: openai/gpt-5
-
-  Openai API key  ?
-```
-
-For local models:
-
-```text
-  Selected model: ollama/qwen3:8b
-
-  No API key required.
-```
-
-The key is written to `.env`, which is gitignored — and which the agent itself is never permitted
-to read.
-
-**4. Agent identity**
-
-```text
-  Agent name  [Vaan]  ?
-```
-
-**5. Memory**
-
-```text
-  Enable persistent project memory?
-
-    Y) yes
-    n) no
-```
-
-**6. Tools**
-
-```text
-  Tools:
-
-    1) [x] Files             read, write and edit inside the workspace
-    2) [x] Search            find text and files in the workspace
-    3) [x] Git               status, diff and log — read-only
-    4) [x] Web               search and fetch public pages
-    5) [x] Code execution    run commands in the sandbox
-    6) [x] Memory            remember durable facts about you
-       [ ] Browser           not configured in this build
-       [ ] External integrations   not configured in this build
-
-  Enter to keep them all, or type the numbers to turn off (e.g. 3 5).
-```
-
-A group you turn off doesn't exist. The model isn't told about a tool it may not use and then
-refused — it simply doesn't have one.
-
-**7. Sandbox**
-
-```text
-  Coding sandbox:
-
-    1) restricted    every command re-approved, 60s limit   (default)
-    2) standard      repeat commands remembered, 5m limit
-    3) custom        edit .vaan/config/config.json yourself
-```
-
-**8. Permissions**
-
-```text
-  Require approval for:
-
-    1) [x] Destructive commands
-    2) [x] External network actions
-    3) [x] Credential access
-    4) [x] Files outside workspace
-    5) [x] System changes
-
-  Enter to keep them all, or type the numbers to drop.
-  Credential access and system changes stay denied either way.
-```
-
-**9. Project configuration**
-
-Vaan shows the `SOUL.md` and `GUARDRAILS.md` it's about to write and waits for a keystroke.
-
-**10. Ready**
-
-```text
-  Vaan is ready.
-
-  Workspace: /Users/you/projects/my-app
-  Model: openai/gpt-5
-  Memory: enabled
-  Sandbox: restricted
-  Tools: files, search, git, web, code, memory
-```
-
-Node 20 or newer. Nothing else to install.
-
----
-
-## 📁 Project Structure
-
-```text
-.
-├── src/
-│   ├── agent.ts                the loop — read this first
-│   ├── index.ts                the runtime, where everything is wired
-│   ├── types.ts                provider-neutral messages, tools, context
-│   ├── config.ts               .vaan/config/config.json
-│   ├── prompt.ts               SOUL.md, GUARDRAILS.md, skills, memory
-│   │
-│   ├── providers/
-│   │   ├── anthropic.ts
-│   │   ├── openai.ts
-│   │   ├── google.ts
-│   │   ├── ollama.ts
-│   │   └── custom.ts
-│   │
-│   ├── memory/
-│   │   ├── store.ts            SQLite with FTS5
-│   │   ├── search.ts           query building and ranking
-│   │   └── context.ts          the retrieval gate, and prompt sections
-│   │
-│   ├── sandbox/
-│   │   ├── filesystem.ts       the path jail
-│   │   ├── process.ts          tokenise, spawn, scrub, cap, kill
-│   │   └── network.ts          what the agent may reach
-│   │
-│   ├── permissions/
-│   │   ├── policy.ts           action → capability
-│   │   ├── rules.ts            the rules, and the floor
-│   │   └── approval.ts         the gate, and who answers it
-│   │
-│   ├── observability/
-│   │   ├── request.ts          Request IDs
-│   │   ├── events.ts           the event taxonomy, and redaction
-│   │   └── trace.ts            writing and reading traces
-│   │
-│   ├── tools/                  files, search, git, web, code, memory
-│   ├── eval/                   suites and graders
-│   └── cli/                    onboarding, REPL, trace, doctor, schedule
-│
-├── .vaan/
-│   ├── config/
-│   ├── memory/
-│   ├── traces/
-│   ├── state/
-│   └── skills/
-│
-├── SOUL.md
-├── GUARDRAILS.md
-├── LICENSE
-└── README.md
-```
-
----
-
-## 🧩 Skills
-
-Vaan supports project-specific skills. Skills live under `.vaan/skills/`:
+Extend Vaan with local skills:
 
 ```text
 .vaan/
 └── skills/
     ├── code-review/
     │   └── SKILL.md
-    ├── deployment/
-    │   └── SKILL.md
-    └── database/
+    └── deploy/
         └── SKILL.md
 ```
 
-A skill describes how Vaan should perform a particular class of work. Only each skill's first line
-goes in the system prompt; when one applies, the model reads the whole file with `read_file`. Twenty
-skills cost twenty lines per turn, not twenty skills' worth.
+Teach Vaan how to perform specialized workflows without changing the core runtime. Only the first
+line of each skill costs tokens; the full file is read when it actually applies.
 
-Skills are instruction, not code — there is no plugin API to learn and nothing to keep in sync with
-a Vaan release.
-
-**Skills are not security boundaries.** Nothing a `SKILL.md` says can widen what the agent may do.
+Skills are instruction, not permission — nothing a `SKILL.md` says can widen what the agent may do.
 
 ---
 
-## 📋 Project Instructions
-
-### `SOUL.md`
-
-Defines the agent's personality and general behavioral style.
-
-### `GUARDRAILS.md`
-
-Contains behavioral constraints and safety expectations.
-
-Both are sent at the top of every conversation, both are yours to edit, and changes apply on the
-next message with no restart.
-
-**These files influence behavior but cannot override runtime security policies.** A sufficiently
-confused model can ignore anything written in them. The limits that actually hold are in
-`src/sandbox/` and `src/permissions/`. Treat these files as direction, and the code as the fence.
-
----
-
-## 🔎 Observability & Traces
-
-Every agent request receives a unique Request ID, and a request is one complete agent flow.
-
-```text
-Request
-  │
-  ├── Model call
-  │
-  ├── Tool call
-  │
-  ├── Permission decision
-  │
-  ├── Sandbox operation
-  │
-  ├── Tool result
-  │
-  ├── Model response
-  │
-  └── Final result
-```
-
-Inspect traces:
+## 💻 CLI
 
 ```bash
-vaan trace              # recent requests
-vaan trace 7f3e9b4a     # one in full, by id or any prefix
+vaan                  # ☁️ Start Vaan
+vaan init             # 🚀 Initialize
+vaan memory           # 🧠 Memory
+vaan schedule         # ⏰ Scheduling
+vaan trace            # 👀 Traces
+vaan doctor           # 🩺 Diagnostics
+vaan eval             # 🧪 Evaluations
 ```
+
+Inside Vaan:
 
 ```text
-  Request ID:  7f3e9b4a-5b5d-4f4f-9e31-1c6e6c3d8a21
-  When:        2026-09-08T09:14:02.184Z
-  Model:       anthropic/claude-opus-5
-  Workspace:   /Users/you/projects/my-app
-
-  Request:     Refactor the authentication middleware
-
-  Steps
-
-      0.00s  request   Refactor the authentication middleware
-      0.412s model     anthropic/claude-opus-5  1204 in / 88 out
-      0.418s tool      search
-      0.501s sandbox   search auth
-      0.503s result    search — src/auth/login.ts:12
-      1.902s permit    write src/auth/login.ts — ALLOW
-      2.140s sandbox   write src/auth/login.ts
-      6.883s permit    execute npm test — ALLOW
-     18.401s sandbox   exec npm test
-
-  Permissions
-
-    ✓ write        src/auth/login.ts
-      changing a file in the workspace — approved by user
-    ✓ execute      npm test
-      running a command in the sandbox — approved by user
-
-  Timing
-
-    Total: 18.42s
-
-  Result: ok
-```
-
-Traces contain the Request ID, model calls, tool calls, execution time, token usage, permission
-decisions, sandbox operations, errors and results.
-
-**Sensitive information is never recorded.** Redaction happens as an event is written, not when it
-is read — a trace file that has to be sanitised later is a trace file that has already leaked. Field
-names that mark a secret lose their value entirely, and every remaining string is scanned for
-key-shaped substrings.
-
-One JSON file per request in `.vaan/traces`, pruned to the most recent 200.
-
----
-
-## 🧪 Evals
-
-Vaan evaluates more than whether the final answer looks correct.
-
-```bash
-vaan eval
-```
-
-Five suites:
-
-| Suite | Asks |
-|---|---|
-| **trajectory** | Did it reach for the right tool, and avoid the wrong one? |
-| **security** | Did it stay inside the workspace? Did it refuse what it should refuse? |
-| **sandbox** | Did coding operations actually go through the sandbox? |
-| **reliability** | Did it recover from a tool failure? Did it verify rather than assume? |
-| **answers** | Judged: is the answer any good? |
-
-The security cases are the ones worth having. They run with **nothing auto-approved**, because
-"what happens when nobody is there to say yes" is exactly what they measure — an auto-yes would
-grade the gate as open. A run that produces a perfect answer by reading a file it should not have
-reached is a failure, and nothing that only looks at the final text can see it.
-
-Deterministic suites must pass completely, judged suites must clear a threshold, non-zero exit
-otherwise. Drop it in CI.
-
----
-
-## ⏰ Scheduling
-
-Vaan supports scheduled tasks without an always-running agent service.
-
-```bash
-vaan schedule            # list
-vaan schedule add        # create one
-vaan schedule run <id>   # run it now
-```
-
-```text
-  What should Vaan do?
-
-  ? Check git changes since yesterday, run the tests, and summarise
-
-  When?  cron, five fields
-
-    0 9 * * 1-5      weekdays at 09:00
-```
-
-**There is no Vaan daemon.** A background process holding your API key with write access to your
-project is something you'd have to trust around the clock. Your operating system already has a
-scheduler you trust, so Vaan stores the task and hands you the line that installs it:
-
-```text
-  0 9 * * 1-5 cd /Users/you/projects/my-app && vaan schedule run 7f3e9b4a
-```
-
-Vaan doesn't install that line itself either — editing a crontab is a system change, and system
-changes are denied by fixed policy, including to the CLI. An agent that exempts itself from its own
-floor doesn't have a floor.
-
-A scheduled run has nobody to ask for permission, so nothing that needs approval happens. It lands
-in the inbox instead, and `/inbox` shows it the next time you're at the keyboard.
-
----
-
-## 🖥️ CLI
-
-```bash
-vaan                 # start the REPL
-vaan init            # run setup again
-vaan memory          # print facts and recent turns
-vaan trace [id]      # list requests, or show one in full
-vaan doctor          # check this install
-vaan eval            # run the suites, exit non-zero if they fail
-vaan schedule        # list, add, remove or run a scheduled task
-```
-
-Options:
-
-```text
---model <spec>       provider/model for this run
---workspace <path>   work somewhere other than the current directory
---no-memory          don't read or write memory this session
---no-trace           don't write a trace file this session
---yes                grant every permission without asking
-```
-
----
-
-## 💬 Chat Commands
-
-```text
-/model       Change model, or show which keys are set
-/new         Start a new conversation, keeping stored memory
-/memory      View memory
-/forget      Remove a fact
-/inbox       Results from scheduled runs
-/status      Workspace, permissions, tools, tokens
-/trace       The last request in full, or one by id
-/settings    Where to change things
-/help        Show help
-/exit        Exit Vaan
-```
-
----
-
-## 🧠 Memory
-
-Two tiers, and the difference is the whole design.
-
-**Facts** are short statements about you. They go into every conversation automatically, so they
-work even when your question doesn't mention them. "Allergic to prawns" has to surface when you ask
-what to order, not only when you say the word prawn.
-
-**Turns** are past conversations, searched full-text and ranked against whatever you just asked.
-Only the relevant ones come back.
-
-Why both: retrieval can miss, injection can't. But injection is paid on every turn, so the facts
-tier stays small on purpose.
-
-Before touching memory, one cheap call answers one question: does answering this need anything
-we've been told? "What's 2+2" doesn't. "When am I seeing Alex" does. It fails open — a slightly
-larger prompt is a much smaller problem than an agent that forgot you.
-
-Everything is in `.vaan/memory/state.db`, locally. Nothing is uploaded. A readable mirror is written
-to `.vaan/memory/MEMORY.md` after each turn.
-
-```bash
-vaan memory
+/model       🤖 Change model
+/new         🆕 New conversation
+/memory      🧠 Memory
+/forget      🗑️ Forget
+/inbox       📥 Scheduled results
+/status      📊 Status
+/trace       👀 This request, in full
+/settings    ⚙️ Settings
+/help        ❓ Help
+/exit        👋 Exit
 ```
 
 ---
 
 ## 🏗️ Architecture
 
-At the core is a model-independent agent loop:
+```text
+☁️ Vaan CLI
+     │
+     ▼
+🧠 Agent Runtime
+ ├── 🤖 Model
+ ├── 🧠 Memory
+ ├── 🔧 Tools
+ ├── 🔐 Permissions
+ └── 👀 Observability
+          │
+          ▼
+    📦 Coding Sandbox
+          │
+          ▼
+        ✓ Result
+```
 
 ```text
-              ┌───────────────┐
-              │     User      │
-              └───────┬───────┘
-                      │
-                      ▼
-              ┌───────────────┐
-              │    Vaan CLI   │
-              └───────┬───────┘
-                      │
-                      ▼
-              ┌───────────────┐
-              │ Agent Runtime │
-              └───────┬───────┘
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-       Memory       Model        Tools
-                      │           │
-                      │           ▼
-                      │    ┌───────────────┐
-                      │    │  Permissions  │
-                      │    └───────┬───────┘
-                      │            │
-                      │            ▼
-                      │    ┌───────────────┐
-                      │    │ Coding Sandbox│
-                      │    └───────┬───────┘
-                      │            │
-                      │            ▼
-                      │          Result
-                      │            │
-                      └────────────┘
-
-                 ─────────────────────
-                    Observability
-                 Request ID + Trace
-                 ─────────────────────
+src/agent.ts         the loop — read this first
+src/index.ts         the runtime, where policy, gate and trace are built
+src/permissions/     capability classification; a floor no config can widen
+src/sandbox/         filesystem, process and network boundaries
+src/observability/   a Request ID and a full trace for every request
+src/providers/       Anthropic, OpenAI, Google, Ollama, custom endpoints
+src/memory/          SQLite with FTS5, two tiers
+src/eval/            suites for trajectory, security, sandbox, reliability
 ```
 
-The model is replaceable. The agent runtime, permissions, memory, sandbox, traces, and evals remain
-independent of the model provider.
+The model is replaceable. The runtime, permissions, memory, sandbox, traces and evals are not tied
+to any provider.
 
-### What an agent actually is
-
-If you're new to this, the mental model is short and worth having.
-
-A language model can't do anything. It only produces text. When it "reads a file," it emits a
-request saying *please run read_file on agent.ts*. Your code runs the read, hands the result back,
-and asks again.
-
-An agent is a loop around that:
-
-1. Send the conversation and the list of tools to the model.
-2. It replies. Asked for no tools? That's your answer — stop.
-3. Asked for tools? Run them, append the results, go back to step 1.
-
-That's the whole idea. It lives in `src/agent.ts`, and it's the shortest useful thing in this repo.
-It knows nothing about workspaces, paths or approvals — tools ask the gate, the gate asks a human —
-which is why it stays readable.
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ---
 
-## 🔌 Provider Architecture
+## 📜 License
 
-Providers implement a common interface.
-
-```text
-Provider
-   │
-   ├── Anthropic     /v1/messages
-   ├── OpenAI        /v1/chat/completions
-   ├── Google        /v1beta/models/…:generateContent
-   ├── Ollama        local, OpenAI-shaped
-   └── Custom        any of the above shapes, your URL
-```
-
-```typescript
-interface Provider {
-  generate(request: ProviderRequest): Promise<ProviderReply>
-  stream(request: ProviderRequest): AsyncIterable<ModelEvent>
-}
-```
-
-Both methods are required. Anthropic, OpenAI and Google stream over SSE; any adapter without a
-streaming endpoint satisfies `stream` with a shared fallback that waits for the whole turn and
-replays it as events — correct, just not incremental.
-
-Adding your own endpoint is configuration, not code:
-
-```bash
-VAAN_PROVIDER_TOGETHER=openai:https://api.together.xyz/v1
-```
-
-which reads its key from `TOGETHER_API_KEY`.
+Apache License 2.0
 
 ---
 
-## 🛡️ Permission Model
-
-Vaan follows a least-privilege approach. Every action is classified into one capability, and the
-rules decide: allow, ask, or deny.
-
-| Capability | Default | Meaning |
-|---|---|---|
-| `read` | allow | Read a file inside the workspace |
-| `write` | ask | Create or modify a file inside the workspace |
-| `execute` | ask | Run a command in the sandbox |
-| `destructive` | ask | A command that removes or rewrites work |
-| `network` | ask | Reach something outside this machine |
-| `outside` | ask | Touch a path outside the workspace |
-| `credentials` | **deny** | Read key material — not configurable |
-| `system` | **deny** | Change the machine rather than the project — not configurable |
-
-Classification is the part that matters. A rule that says "ask before writing outside the
-workspace" is worth nothing if a path that walks out through a symlink is classified as an ordinary
-workspace write, so paths are resolved to real paths — including the real path of the nearest
-existing ancestor, for a file that doesn't exist yet — before anything else looks at them.
-
-Approving `npm test` once covers the identical command again for the session. File writes are never
-memoised: the path is the same on every write, and the content is what changed.
-
-**The approval happens outside the model's control.**
-
----
-
-## 🔑 Credentials
-
-Provider credentials are handled separately from model context. They:
-
-* Are never sent to the model
-* Never appear in traces — redaction happens as events are written
-* Are stripped from the environment any sandboxed command inherits
-* Are never readable by the agent's own file tools, even inside the workspace
-* Live in `.env`, which is gitignored
-
----
-
-## Philosophy
-
-Vaan is built around a simple idea:
-
-**The AI should be capable of acting, while the system remains observable and in control.**
-
-The model provides reasoning. Vaan provides context, memory, tools, permissions, sandboxed coding,
-execution, verification, and observability.
-
-Every request should be understandable after the fact: What did the agent receive? What did it
-decide? What tools did it use? What was allowed? What ran in the sandbox? What happened?
-
-That is the foundation of Vaan.
-
----
-
-## License
-
-Vaan AI is licensed under the Apache License 2.0.
-
-Copyright © 2026 Vaan AI contributors.
-
-See the [LICENSE](LICENSE) file for the full license text.
-
----
-
-**Vaan**
-
-*Think. Remember. Act. Observe.*
-
-A local-first AI agent for your terminal.
+**☁️ Vaan** — *Think. Remember. Act. Observe.*
