@@ -6,6 +6,7 @@ import { defaultConfig, loadConfig } from "../config.js";
 import { printReport } from "../eval/report.js";
 import { runEvals } from "../eval/runner.js";
 import { openMemory } from "../memory/store.js";
+import { launchCommand } from "../invocation.js";
 import { parseArgs } from "./args.js";
 import { runDoctor } from "./doctor.js";
 import { loadEnv } from "./dotenv.js";
@@ -139,7 +140,7 @@ async function main(argv: string[]): Promise<number> {
 }
 
 function unconfigured(out: NodeJS.WriteStream): number {
-  out.write("\n  No model configured. Run `vaan init` first.\n\n");
+  out.write(`\n  No model configured. Run \`${launchCommand()} init\` first.\n\n`);
   return 1;
 }
 

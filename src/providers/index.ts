@@ -6,6 +6,7 @@
 // allowlist of model names anywhere in this codebase, on purpose — a model
 // released tomorrow works today.
 
+import { launchCommand } from "../invocation.js";
 import type { Provider } from "../types.js";
 import { customProvider, isShape, SHAPES, type Shape } from "./custom.js";
 import { OLLAMA_BASE_URL } from "./ollama.js";
@@ -128,7 +129,7 @@ export function build(spec: ProviderSpec, env: Env = process.env): Provider {
     const names = [spec.envKey, ...(spec.altEnvKeys ?? [])].join(" or ");
     throw new Error(
       `${spec.name} needs ${names}. Set it in your environment or .env, ` +
-        `or run \`vaan init\` to write one.`,
+        `or run \`${launchCommand()} init\` to write one.`,
     );
   }
   return customProvider({

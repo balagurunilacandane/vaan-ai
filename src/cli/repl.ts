@@ -13,6 +13,7 @@ import { createInterface, type Interface } from "node:readline/promises";
 import { describeConfig, type Config } from "../config.js";
 import { clearInbox, readInbox } from "../inbox.js";
 import { createSession, type Session } from "../index.js";
+import { launchCommand } from "../invocation.js";
 import { shortId } from "../observability/request.js";
 import type { PermissionRequest } from "../permissions/rules.js";
 import { statuses } from "../providers/index.js";
@@ -298,7 +299,7 @@ async function handle(
       out.write(`    SOUL.md\n      who the agent is\n\n`);
       out.write(`    GUARDRAILS.md\n      what it should and shouldn't do\n\n`);
       out.write("  Changes to SOUL.md and GUARDRAILS.md apply on the next message.\n");
-      out.write("  Config changes need a restart. `vaan init` walks through it again.\n\n");
+      out.write(`  Config changes need a restart. \`${launchCommand()} init\` walks through it again.\n\n`);
       return session;
 
     default:

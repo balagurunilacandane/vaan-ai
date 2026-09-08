@@ -25,14 +25,6 @@ You
 ## 🚀 Get Started
 
 ```bash
-npx vaan-ai
-```
-
-That's it.
-
-Or install it once and use it everywhere:
-
-```bash
 npm install -g vaan-ai
 ```
 
@@ -41,7 +33,10 @@ cd ~/projects/my-app
 vaan
 ```
 
-The package is `vaan-ai`; the command it gives you is `vaan`.
+That's it. The package is `vaan-ai`; the command it installs is `vaan`.
+
+Just looking? `npx vaan-ai` runs it without installing anything — but it leaves
+nothing on your PATH, so it's `npx vaan-ai` every time.
 
 <details>
 <summary>From source</summary>

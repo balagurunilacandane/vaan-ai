@@ -29,10 +29,11 @@ import { DEFAULT_GUARDRAILS, DEFAULT_SOUL } from "../prompt.js";
 import { build, isShape, registry, SHAPES, type Shape } from "../providers/index.js";
 import { GROUPS } from "../tools/index.js";
 import type { ToolGroup } from "../types.js";
+import { INSTALL_HINT, launchCommand, viaNpx } from "../invocation.js";
 import { updateEnvFile } from "./dotenv.js";
 import { CUSTOM_NOTE, DEFAULT_MODEL, SUGGESTED } from "./suggested.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 
 export interface WizardOptions {
   /** Where Vaan was launched. Step one can move it. */
@@ -108,7 +109,7 @@ export async function runWizard(opts: WizardOptions): Promise<WizardResult | und
     const problem = await healthCheck(config.model, opts.env);
     if (problem) {
       out.write(`\n\n  That call failed:\n  ${problem}\n\n`);
-      out.write("  Fix it and run `vaan init` again.\n\n");
+      out.write(`  Fix it and run \`${launchCommand()} init\` again.\n\n`);
       return undefined;
     }
     out.write("ok\n");
@@ -276,7 +277,7 @@ async function askKey(
   out.write(`\n  Selected model: ${spec}\n`);
   const key = await askSecret(rl, out, `\n  ${label(name)} API key  ? `);
   if (!key) {
-    out.write("\n  No key, no calls. Set it and run `vaan init` again.\n\n");
+    out.write(`\n  No key, no calls. Set it and run \`${launchCommand()} init\` again.\n\n`);
     return false;
   }
   opts.env[found.envKey] = key;
@@ -403,6 +404,9 @@ function ready(out: NodeJS.WriteStream, config: Config): void {
   out.write(`  Memory: ${config.memory ? "enabled" : "disabled"}\n`);
   out.write(`  Sandbox: ${config.sandbox.name}\n`);
   out.write(`  Tools: ${config.tools.join(", ")}\n\n`);
+  // Nothing is on PATH after npx, and finding that out tomorrow is worse than
+  // finding it out now.
+  if (viaNpx()) out.write(`  ${INSTALL_HINT}\n\n`);
 }
 
 /** One small call, so a bad key fails here instead of three turns into a REPL. */
@@ -425,14 +429,26 @@ async function healthCheck(spec: string, env: NodeJS.ProcessEnv): Promise<string
   }
 }
 
-/** readline has no built-in masking; suppressing its echo is the usual trick. */
+/**
+ * readline has no built-in masking; suppressing its echo is the usual trick.
+ *
+ * The order below is load-bearing. Writing the prompt with `out.write` and then
+ * calling `rl.question("")` looks equivalent and is not: `question` sets the
+ * prompt, refreshes the line — `ESC[1G ESC[0J`, cursor to column one and clear
+ * — and so erases the prompt that was just written. The user gets a blank line
+ * and no idea they are being asked for a key.
+ *
+ * So `question` prints the prompt itself, and masking goes on immediately
+ * after. `question` writes synchronously before it returns its promise, which
+ * is what makes that safe.
+ */
 async function askSecret(rl: Interface, out: NodeJS.WriteStream, prompt: string): Promise<string> {
-  out.write(prompt);
+  const pending = rl.question(prompt);
   const internals = rl as unknown as { _writeToOutput?: (text: string) => void };
   const original = internals._writeToOutput;
   internals._writeToOutput = () => {};
   try {
-    return (await rl.question("")).trim();
+    return (await pending).trim();
   } finally {
     internals._writeToOutput = original;
     out.write("\n");
