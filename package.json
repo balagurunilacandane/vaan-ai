@@ -28,11 +28,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node scripts/test.js",
     "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0"

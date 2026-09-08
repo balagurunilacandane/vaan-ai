@@ -88,7 +88,7 @@ src/eval/            suites and graders
 ```bash
 npm install          # runs the FTS5 probe; it should pass
 npm run typecheck
-npm test             # 146 tests, all offline
+npm test             # 135 tests, all offline
 ```
 
 `npm test` compiles to `dist/` and runs `node --test`. There's no test framework
