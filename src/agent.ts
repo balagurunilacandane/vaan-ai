@@ -42,7 +42,7 @@ export type AgentEvent =
   | { type: "delta"; text: string }
   | { type: "text"; text: string }
   | { type: "tool_call"; name: string; input: unknown }
-  | { type: "tool_result"; name: string; output: string; isError: boolean };
+  | { type: "tool_result"; name: string; output: string; isError: boolean; ms: number };
 
 export interface AgentResult {
   text: string;
@@ -133,9 +133,16 @@ export async function continueAgent(
         opts.onEvent?.({ type: "tool_call", name: call.name, input: call.input });
         trace?.record({ kind: "tool_call", tool: call.name, input: call.input });
 
+        const startedAt = Date.now();
         const part = await runTool(call, tools, ctx);
         const { output, isError } = part;
-        opts.onEvent?.({ type: "tool_result", name: call.name, output, isError });
+        opts.onEvent?.({
+          type: "tool_result",
+          name: call.name,
+          output,
+          isError,
+          ms: Date.now() - startedAt,
+        });
         trace?.record({
           kind: "tool_result",
           tool: call.name,

@@ -45,6 +45,11 @@ interface Response {
 export type GoogleOptions = AdapterOptions;
 
 export function googleProvider(opts: GoogleOptions): Provider {
+  // Flipped off the first time an endpoint turns out not to speak SSE, so a
+  // gateway without streaming costs one wasted request rather than one per
+  // turn for the life of the session.
+  const streaming = { on: true };
+
   const generate = async (req: ProviderRequest): Promise<ProviderReply> => {
     const json = (await postJson(endpoint(opts, req.model, "generateContent"), {
       headers: keyHeader(opts.apiKey),
@@ -59,7 +64,8 @@ export function googleProvider(opts: GoogleOptions): Provider {
     ...(opts.envKey ? { envKey: opts.envKey } : {}),
     generate,
     stream(req) {
-      return streamContent(opts, req, generate);
+      if (!streaming.on) return fallbackStream(generate, req);
+      return streamContent(opts, req, generate, streaming);
     },
   };
 }
@@ -186,6 +192,7 @@ async function* streamContent(
   opts: GoogleOptions,
   req: ProviderRequest,
   generate: (req: ProviderRequest) => Promise<ProviderReply>,
+  streaming: { on: boolean },
 ): AsyncGenerator<ModelEvent> {
   const collected: WirePart[] = [];
   let finish: string | undefined;
@@ -229,10 +236,19 @@ async function* streamContent(
     }
   } catch (err) {
     if (!yielded) {
+      // Nothing has been handed over yet, so starting again is invisible.
+      streaming.on = false;
       yield* fallbackStream(generate, req);
       return;
     }
     throw err;
+  }
+
+  // See the note in anthropic.ts.
+  if (!yielded && collected.length === 0) {
+    streaming.on = false;
+    yield* fallbackStream(generate, req);
+    return;
   }
 
   const parts = partsOf(collected);

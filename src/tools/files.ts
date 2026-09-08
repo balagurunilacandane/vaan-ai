@@ -147,9 +147,15 @@ async function commit(
 
   if (before === content) return `${label} already has exactly that content. Nothing written.`;
 
-  const approved = await ctx.confirm(
-    `${before === undefined ? "Create" : "Modify"} ${label}\n\n${diff(before ?? "", content)}`,
-  );
+  const stat = diffStat(before ?? "", content);
+  const approved = await ctx.confirm({
+    tool,
+    target: label,
+    action: before === undefined ? "Create" : "Modify",
+    added: stat.added,
+    removed: stat.removed,
+    diff: diff(before ?? "", content),
+  });
   if (!approved) {
     ctx.trace.record({ kind: "sandbox", op: "write", target: label, ok: false, detail: "declined" });
     return `The user declined the write to ${label}. The file is unchanged.`;
@@ -163,13 +169,33 @@ async function commit(
 }
 
 /**
- * A diff good enough to decide by. Trims the common head and tail and shows
- * what's left. That covers the shape of a normal edit without dragging in a
- * real LCS implementation for a confirmation prompt.
+ * Split into lines the way people count them.
+ *
+ * A text file ends with a newline, so `"a\nb\n".split()` yields a third,
+ * empty element. Counting it means a two-line file is reported as "+ 3" and the
+ * diff ends on a stray "+ " — a phantom line the user is being asked to approve.
  */
-export function diff(before: string, after: string): string {
-  const a = before === "" ? [] : before.split("\n");
-  const b = after === "" ? [] : after.split("\n");
+const lines = (text: string): string[] =>
+  text === "" ? [] : text.replace(/\n$/, "").split("\n");
+
+interface Trimmed {
+  head: number;
+  removed: string[];
+  added: string[];
+}
+
+/**
+ * The changed middle, with the common head and tail trimmed off. That covers
+ * the shape of a normal edit without dragging in a real LCS implementation for
+ * a confirmation prompt.
+ *
+ * Shared by `diff` and `diffStat` so the numbers on the prompt always describe
+ * the diff behind it — counting separately is how "+2 -14" ends up disagreeing
+ * with what `[d]` prints.
+ */
+function trimCommon(before: string, after: string): Trimmed {
+  const a = lines(before);
+  const b = lines(after);
 
   let head = 0;
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
@@ -179,9 +205,21 @@ export function diff(before: string, after: string): string {
     endA--;
     endB--;
   }
+  return { head, removed: a.slice(head, endA), added: b.slice(head, endB) };
+}
 
-  const removed = a.slice(head, endA).map((line) => `- ${line}`);
-  const added = b.slice(head, endB).map((line) => `+ ${line}`);
+/** How many lines the change touches, for the one-line summary. */
+export function diffStat(before: string, after: string): { added: number; removed: number } {
+  const trimmed = trimCommon(before, after);
+  return { added: trimmed.added.length, removed: trimmed.removed.length };
+}
+
+/** The same change, rendered. */
+export function diff(before: string, after: string): string {
+  const trimmed = trimCommon(before, after);
+  const head = trimmed.head;
+  const removed = trimmed.removed.map((line) => `- ${line}`);
+  const added = trimmed.added.map((line) => `+ ${line}`);
   const body = [...removed, ...added];
   if (body.length === 0) return "(no textual change)";
 

@@ -42,6 +42,11 @@ interface Response {
 export type AnthropicOptions = AdapterOptions;
 
 export function anthropicProvider(opts: AnthropicOptions): Provider {
+  // Flipped off the first time an endpoint turns out not to speak SSE, so a
+  // gateway without streaming costs one wasted request rather than one per
+  // turn for the life of the session.
+  const streaming = { on: true };
+
   const generate = async (req: ProviderRequest): Promise<ProviderReply> => {
     const json = (await postJson(`${opts.baseUrl}/v1/messages`, {
       headers: headers(opts.apiKey),
@@ -56,7 +61,8 @@ export function anthropicProvider(opts: AnthropicOptions): Provider {
     ...(opts.envKey ? { envKey: opts.envKey } : {}),
     generate,
     stream(req) {
-      return streamMessages(opts, req, generate);
+      if (!streaming.on) return fallbackStream(generate, req);
+      return streamMessages(opts, req, generate, streaming);
     },
   };
 }
@@ -176,6 +182,7 @@ async function* streamMessages(
   opts: AnthropicOptions,
   req: ProviderRequest,
   generate: (req: ProviderRequest) => Promise<ProviderReply>,
+  streaming: { on: boolean },
 ): AsyncGenerator<ModelEvent> {
   const blocks: Building[] = [];
   let stopReason: string | undefined;
@@ -190,6 +197,7 @@ async function* streamMessages(
       ...(req.signal ? { signal: req.signal } : {}),
     });
   } catch {
+    streaming.on = false;
     yield* fallbackStream(generate, req);
     return;
   }
@@ -257,6 +265,8 @@ async function* streamMessages(
   } catch (err) {
     // Nothing has been handed over yet, so starting again is safe and invisible.
     if (!yielded) {
+      // Nothing has been handed over yet, so starting again is invisible.
+      streaming.on = false;
       yield* fallbackStream(generate, req);
       return;
     }
@@ -264,6 +274,17 @@ async function* streamMessages(
   }
 
   const finished = blocks.filter((block): block is Building => block !== undefined).map(strip);
+
+  // A 200 that isn't actually an event stream — a proxy that buffered it into
+  // plain JSON, a gateway that ignored `stream: true` — parses to no frames and
+  // throws nothing. Falling back only on a thrown error would hand the caller a
+  // silently empty turn, which is worse than a slow one.
+  if (!yielded && finished.length === 0) {
+    streaming.on = false;
+    yield* fallbackStream(generate, req);
+    return;
+  }
+
   yield {
     type: "done",
     reply: {

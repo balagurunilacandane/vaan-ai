@@ -40,6 +40,11 @@ interface Response {
 export type OpenAIOptions = AdapterOptions;
 
 export function openaiProvider(opts: OpenAIOptions): Provider {
+  // Flipped off the first time an endpoint turns out not to speak SSE, so a
+  // gateway without streaming costs one wasted request rather than one per
+  // turn for the life of the session.
+  const streaming = { on: true };
+
   const generate = async (req: ProviderRequest): Promise<ProviderReply> => {
     const json = (await postJson(`${opts.baseUrl}/chat/completions`, {
       // Ollama and friends ignore the header; sending it unconditionally is
@@ -56,7 +61,8 @@ export function openaiProvider(opts: OpenAIOptions): Provider {
     ...(opts.envKey ? { envKey: opts.envKey } : {}),
     generate,
     stream(req) {
-      return streamCompletions(opts, req, generate);
+      if (!streaming.on) return fallbackStream(generate, req);
+      return streamCompletions(opts, req, generate, streaming);
     },
   };
 }
@@ -171,6 +177,7 @@ async function* streamCompletions(
   opts: OpenAIOptions,
   req: ProviderRequest,
   generate: (req: ProviderRequest) => Promise<ProviderReply>,
+  streaming: { on: boolean },
 ): AsyncGenerator<ModelEvent> {
   const calls: WireToolCall[] = [];
   let text = "";
@@ -222,10 +229,20 @@ async function* streamCompletions(
     }
   } catch (err) {
     if (!yielded) {
+      // Nothing has been handed over yet, so starting again is invisible.
+      streaming.on = false;
       yield* fallbackStream(generate, req);
       return;
     }
     throw err;
+  }
+
+  // See the note in anthropic.ts: a 200 that isn't an event stream yields
+  // nothing and throws nothing, so an empty result means fall back.
+  if (!yielded && calls.length === 0 && !text) {
+    streaming.on = false;
+    yield* fallbackStream(generate, req);
+    return;
   }
 
   const assembled: WireMessage = {

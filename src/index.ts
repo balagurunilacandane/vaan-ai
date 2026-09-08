@@ -28,7 +28,7 @@ import { loadSkills } from "./skills.js";
 import { builtinTools } from "./tools/index.js";
 import type { SearchProvider } from "./tools/web.js";
 import { scrubEnv } from "./sandbox/process.js";
-import type { Message, Provider, Tool, ToolContext, Usage } from "./types.js";
+import type { ConfirmRequest, Message, Provider, Tool, ToolContext, Usage } from "./types.js";
 
 /** Rough cap on in-process history, trimmed whole rounds at a time. */
 const MAX_HISTORY = 40;
@@ -44,7 +44,7 @@ export interface SessionOptions {
   env?: Env & NodeJS.ProcessEnv;
   search?: SearchProvider;
   /** Show a diff and wait. Distinct from `approve`: what, not whether. */
-  confirm?: (message: string) => Promise<boolean>;
+  confirm?: (request: ConfirmRequest) => Promise<boolean>;
   /** Asks the human for permission. Absent means nobody is there, so: no. */
   approve?: Approver;
   /** Write traces to .vaan/traces. Off for evals and unit tests. */

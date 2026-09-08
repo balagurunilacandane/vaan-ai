@@ -30,6 +30,26 @@ export interface Message {
   raw?: unknown;
 }
 
+/**
+ * A change waiting on a person.
+ *
+ * Structured rather than a rendered string so the caller decides how much to
+ * show. A forty-line diff dumped unasked is a diff nobody reads; the terminal
+ * shows the shape of the change and hands over the rest on request.
+ */
+export interface ConfirmRequest {
+  /** The tool asking, e.g. "edit_file". */
+  tool: string;
+  /** Path relative to the workspace. */
+  target: string;
+  /** "Create" or "Modify". */
+  action: string;
+  added: number;
+  removed: number;
+  /** The full diff, shown only when asked for. */
+  diff: string;
+}
+
 /** JSON Schema for a tool's input. Deliberately loose — providers pass it through. */
 export interface JsonSchema {
   type: "object";
@@ -56,8 +76,9 @@ export interface ToolContext {
   trace: Trace;
   /** What the agent may reach over the network. */
   network: NetworkPolicy;
-  /** Show the user a diff and wait. Separate from `gate`: what, not whether. */
-  confirm(message: string): Promise<boolean>;
+  /** Show the user what is about to change and wait. Separate from `gate`:
+   * what, not whether. */
+  confirm(request: ConfirmRequest): Promise<boolean>;
   /** Store a fact about the user. Never throws — memory is not load-bearing. */
   remember(fact: string): Promise<void>;
   /** The environment sandboxed processes inherit, credentials already stripped. */

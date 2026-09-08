@@ -9,6 +9,8 @@
 // tool receives it, nothing the model emits can reach it. When the gate needs a
 // yes, it comes from a person or it doesn't come.
 
+import { homedir } from "node:os";
+import { isAbsolute, relative } from "node:path";
 import { createInterface, type Interface } from "node:readline/promises";
 import { describeConfig, type Config } from "../config.js";
 import { clearInbox, readInbox } from "../inbox.js";
@@ -20,7 +22,20 @@ import { statuses } from "../providers/index.js";
 import { activeGroups, GROUPS } from "../tools/index.js";
 import { printMemory } from "./memory-cmd.js";
 import { configFile } from "../paths.js";
+import { VERSION } from "./wizard.js";
 import { render } from "./trace-cmd.js";
+import {
+  ASK,
+  createTheme,
+  describeInput,
+  DOT,
+  duration,
+  STEP,
+  summariseOutput,
+  tokens,
+  clip,
+  type Theme,
+} from "./theme.js";
 
 const DIM = "[2m";
 const RESET = "[0m";
@@ -38,31 +53,31 @@ export interface ReplOptions {
 export async function runRepl(opts: ReplOptions): Promise<number> {
   const out = process.stdout;
   const rl = createInterface({ input: process.stdin, output: out });
-  const dim = (text: string) => (out.isTTY ? `${DIM}${text}${RESET}` : text);
+  const t = createTheme({ env: opts.env });
 
   let session: Session;
   try {
-    session = open(opts, rl);
+    session = open(opts, rl, t);
   } catch (err) {
-    out.write(`\n  ${message(err)}\n\n`);
+    out.write(`\n  ${t.red(message(err))}\n\n`);
     rl.close();
     return 1;
   }
 
-  banner(out, opts, session);
+  banner(out, opts, session, t);
 
   let lastRequestId = "";
   for (;;) {
-    const line = (await rl.question("> ")).trim();
+    const line = (await rl.question(`${t.lime(">")} `)).trim();
     if (!line) continue;
 
     if (line.startsWith("/")) {
       const [command = "", ...rest] = line.slice(1).split(/\s+/);
       if (command === "exit" || command === "quit") break;
       try {
-        session = await handle(command, rest, session, opts, rl, out, lastRequestId);
+        session = await handle(command, rest, session, opts, rl, out, lastRequestId, t);
       } catch (err) {
-        out.write(`  ${message(err)}\n\n`);
+        out.write(`  ${t.red(message(err))}\n\n`);
       }
       continue;
     }
@@ -72,30 +87,42 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
     rl.once("SIGINT", interrupt);
     let streamed = false;
     try {
+      out.write("\n");
       const result = await session.ask(line, {
         signal: controller.signal,
         onRequest: (request) => {
           lastRequestId = request.id;
-          out.write(dim(`  · ${shortId(request.id)}\n`));
         },
-        onRecall: (used) =>
-          out.write(dim(used ? "  · checking memory\n" : "  · no memory needed\n")),
+        onRecall: (used) => {
+          if (!used) out.write(`${t.faint(`  ${DOT} no memory needed`)}\n\n`);
+        },
         onEvent: (event) => {
           if (event.type === "delta") {
-            streamed = true;
+            if (!streamed) streamed = true;
             out.write(event.text);
           }
-          if (event.type === "tool_call") out.write(dim(`${streamed ? "\n" : ""}  · ${event.name}\n`));
-          if (event.type === "tool_result" && event.isError) {
-            out.write(dim(`    ${event.output.split("\n")[0]}\n`));
+          if (event.type === "tool_call") {
+            const args = describeInput(event.input);
+            out.write(
+              `${streamed ? "\n\n" : ""}${t.lime(STEP)} ${t.lime(event.name)}` +
+                `${args ? ` ${t.dim(args)}` : ""}\n`,
+            );
+            streamed = false;
+          }
+          if (event.type === "tool_result") {
+            const summary = summariseOutput(event.output);
+            const timing = `${DOT} ${duration(event.ms)}`;
+            const body = `  ${summary}  ${timing}`;
+            out.write(event.isError ? `${t.red(body)}\n\n` : `${t.dim(body)}\n\n`);
           }
         },
       });
-      // With streaming on, the text has already been printed as it arrived;
-      // printing `result.text` again would double every answer.
+      // Streaming already printed the text as it arrived; printing result.text
+      // again would double every answer.
       out.write(streamed ? "\n\n" : `${result.text}\n\n`);
+      footer(out, session, lastRequestId, t);
     } catch (err) {
-      out.write(controller.signal.aborted ? "  interrupted\n\n" : `  ${message(err)}\n\n`);
+      out.write(controller.signal.aborted ? `  ${t.dim("interrupted")}\n\n` : `  ${t.red(message(err))}\n\n`);
     } finally {
       rl.off("SIGINT", interrupt);
     }
@@ -106,30 +133,46 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
   return 0;
 }
 
-function banner(out: NodeJS.WriteStream, opts: ReplOptions, session: Session): void {
-  out.write(`\n  ✓ ${opts.model}\n`);
-  out.write(
-    opts.memory
-      ? "  ✓ memory on — .vaan/memory/state.db, local only\n"
-      : "  ✓ memory off for this session\n",
-  );
-  out.write(`  ✓ sandbox ${opts.config.sandbox.name} — commands run inside ${opts.workspace}\n`);
-  out.write(
-    opts.trace
-      ? "  ✓ tracing on — .vaan/traces, one file per request\n"
-      : "  ✓ tracing off for this session\n",
-  );
-  out.write(`  ✓ tools — ${activeGroups(session.tools).join(", ")}\n`);
-  out.write("  ✓ skills — drop a SKILL.md in .vaan/skills/\n");
-  if (opts.yes) out.write("  ! --yes: every permission is granted without asking\n");
-  for (const warning of session.warnings) out.write(`  ! ${warning}\n`);
+/** Model, tokens, and the request id — one dim line under each answer. */
+function footer(
+  out: NodeJS.WriteStream,
+  session: Session,
+  requestId: string,
+  t: Theme,
+): void {
+  // No percentage: Vaan has no allowlist of models and therefore no idea how
+  // big this one's context window is. A made-up denominator is worse than none.
+  const used = `↑${tokens(session.usage.input)} ↓${tokens(session.usage.output)}`;
+  const id = requestId ? `  ${DOT}  ${shortId(requestId)}` : "";
+  out.write(`${t.faint(`  ${session.model}  ${DOT}  ${used}${id}`)}\n\n`);
+}
 
+function banner(out: NodeJS.WriteStream, opts: ReplOptions, session: Session, t: Theme): void {
+  const name = session.config.agentName.toLowerCase();
+  out.write(`\n  ${t.bold(t.lime(name))} ${t.dim(VERSION)}\n`);
+
+  // One line of context rather than six lines of ticks: what it can see, what
+  // it can do to you, and whether it will remember. Everything else is /status.
+  const facts = [
+    opts.workspace.replace(homedir(), "~"),
+    opts.config.sandbox.name === "restricted" ? "sandboxed" : opts.config.sandbox.name,
+    opts.memory ? "memory on" : "memory off",
+    opts.trace ? "tracing on" : "tracing off",
+  ];
+  out.write(`  ${t.dim(facts.join(`  ${DOT}  `))}\n`);
+
+  const notes = [...session.warnings];
+  if (opts.yes) notes.push("--yes: every permission is granted without asking");
   const pending = readInbox(opts.workspace).length;
-  if (pending > 0) out.write(`  ! ${pending} item${pending === 1 ? "" : "s"} in /inbox\n`);
+  if (pending > 0) notes.push(`${pending} item${pending === 1 ? "" : "s"} in /inbox`);
+  for (const note of notes) out.write(`  ${t.red(ASK)} ${t.dim(note)}\n`);
+
   out.write("\n");
 }
 
-function open(opts: ReplOptions, rl: Interface): Session {
+function open(opts: ReplOptions, rl: Interface, t: Theme): Session {
+  const out = process.stdout;
+
   return createSession({
     workspace: opts.workspace,
     model: opts.model,
@@ -142,22 +185,75 @@ function open(opts: ReplOptions, rl: Interface): Session {
 
     // Whether. The gate calls this, and only a person can answer it.
     approve: async (request: PermissionRequest, reason: string) => {
-      process.stdout.write(`\n  Vaan wants to ${verb(request)}:\n\n    ${request.target}\n\n`);
-      process.stdout.write(`  Permission:\n    ${request.capability.toUpperCase()}`);
-      process.stdout.write(request.detail ? ` — ${request.detail}\n\n` : `\n\n`);
-      process.stdout.write(`  ${reason}\n\n`);
-      const answer = (await rl.question("  Allow?  [y/N] ")).trim().toLowerCase();
-      process.stdout.write("\n");
+      const detail = request.detail ? ` ${DOT} ${request.detail}` : "";
+      out.write(
+        `${t.red(ASK)} ${t.bright(verb(request))} ` +
+          `${t.dim(clip(shorten(request.target, opts.workspace), 48))}\n`,
+      );
+      out.write(`${t.dim(`  ${request.capability.toUpperCase()}${detail}`)}\n`);
+      out.write(`${t.faint(`  ${reason}`)}\n`);
+      const answer = (
+        await rl.question(`  ${t.dim("allow?")}  ${t.bright("[y]")} yes  ${t.bright("[n]")} no  `)
+      )
+        .trim()
+        .toLowerCase();
+      out.write("\n");
       return answer === "y" || answer === "yes";
     },
 
-    // What. Every write stops here too: the path, the diff, and one keystroke.
-    confirm: async (details) => {
-      process.stdout.write(`\n${details}\n\n`);
-      const answer = (await rl.question("  Write it?  [y/N] ")).trim().toLowerCase();
-      return answer === "y" || answer === "yes";
+    // What. Every write stops here too — but the diff is offered, not dumped.
+    // Forty lines nobody asked for is forty lines nobody reads.
+    confirm: async (request) => {
+      out.write(`${t.red(ASK)} ${t.bright(request.tool)}  ${t.dim(request.target)}\n`);
+      out.write(
+        `  ${t.red(`- ${request.removed}`)}   ${t.lime(`+ ${request.added}`)}` +
+          `   ${t.faint(request.action.toLowerCase())}\n`,
+      );
+
+      for (;;) {
+        const answer = (
+          await rl.question(
+            `  ${t.dim("apply this change?")}  ${t.bright("[y]")} yes  ` +
+              `${t.bright("[d]")} diff  ${t.bright("[n]")} no  `,
+          )
+        )
+          .trim()
+          .toLowerCase();
+
+        if (answer === "d" || answer === "diff") {
+          out.write(`\n${colourDiff(request.diff, t)}\n\n`);
+          continue;
+        }
+        out.write("\n");
+        return answer === "y" || answer === "yes";
+      }
     },
   });
+}
+
+/**
+ * A path a person can read. The policy resolves everything to an absolute real
+ * path — which is what it must compare against — but
+ * `/private/var/folders/2c/j03wb…` truncated to fit is not an approval prompt,
+ * it is a dare. Inside the workspace, say where inside.
+ */
+function shorten(target: string, workspace: string): string {
+  if (!isAbsolute(target)) return target;
+  const inside = relative(workspace, target);
+  if (inside && !inside.startsWith("..")) return inside;
+  return target.replace(homedir(), "~");
+}
+
+/** Red for what goes, lime for what arrives. The rest is context. */
+function colourDiff(diff: string, t: Theme): string {
+  return diff
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("- ")) return t.red(line);
+      if (line.startsWith("+ ")) return t.lime(line);
+      return t.faint(line);
+    })
+    .join("\n");
 }
 
 const verb = (request: PermissionRequest): string => {
@@ -197,6 +293,7 @@ async function handle(
   rl: Interface,
   out: NodeJS.WriteStream,
   lastRequestId: string,
+  t: Theme,
 ): Promise<Session> {
   switch (command) {
     case "model": {
@@ -212,7 +309,7 @@ async function handle(
         return session;
       }
       const next = args[0] as string;
-      const replacement = open({ ...opts, model: next }, rl);
+      const replacement = open({ ...opts, model: next }, rl, t);
       session.close();
       opts.model = next;
       out.write(`\n  ✓ ${next}\n\n`);
