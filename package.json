@@ -5,11 +5,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/balagurunilacandane/looplet.git"
+    "url": "git+https://github.com/balagurunilacandane/vaan-ai.git"
   },
-  "homepage": "https://github.com/balagurunilacandane/looplet#readme",
+  "homepage": "https://github.com/balagurunilacandane/vaan-ai#readme",
   "bugs": {
-    "url": "https://github.com/balagurunilacandane/looplet/issues"
+    "url": "https://github.com/balagurunilacandane/vaan-ai/issues"
   },
   "type": "module",
   "engines": {

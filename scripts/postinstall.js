@@ -22,7 +22,7 @@ const FIX = `
       Windows  npm install --global windows-build-tools
 
   Still stuck? Please open an issue and include the error above:
-  https://github.com/balagurunilacandane/looplet/issues/new?template=install-failed.md
+  https://github.com/balagurunilacandane/vaan-ai/issues/new?template=install-failed.md
 `;
 
 let Database;
