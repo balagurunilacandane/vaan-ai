@@ -16,7 +16,7 @@
 
 import type { Trace } from "./observability/trace.js";
 import { PermissionDenied } from "./permissions/approval.js";
-import type { Message, ModelEvent, Part, Provider, ProviderReply, Tool, ToolContext, Usage } from "./types.js";
+import type { Message, Part, Provider, Tool, ToolContext, Usage } from "./types.js";
 
 type ToolCall = Extract<Part, { type: "tool_call" }>;
 type ToolResult = Extract<Part, { type: "tool_result" }>;
@@ -30,8 +30,6 @@ export interface AgentOptions {
   /** Cap on model round-trips, so a confused model can't loop forever. */
   maxSteps?: number;
   maxTokens?: number;
-  /** Read the reply incrementally. The REPL does; evals and the gate don't. */
-  stream?: boolean;
   trace?: Trace;
   onEvent?: (event: AgentEvent) => void;
   signal?: AbortSignal;
@@ -39,7 +37,8 @@ export interface AgentOptions {
 
 /** Progress as it happens, so the REPL can print instead of sitting silent. */
 export type AgentEvent =
-  | { type: "delta"; text: string }
+  /** A round-trip has started. Nothing to print yet, but something to say. */
+  | { type: "thinking"; step: number }
   | { type: "text"; text: string }
   | { type: "tool_call"; name: string; input: unknown }
   | { type: "tool_result"; name: string; output: string; isError: boolean; ms: number };
@@ -81,9 +80,10 @@ export async function continueAgent(
   for (let step = 0; step < maxSteps; step++) {
     steps = step + 1;
     const request = { model, system, tools, messages, maxTokens, ...(signal ? { signal } : {}) };
-    const reply = opts.stream
-      ? await consume(opts.provider.stream(request), opts.onEvent)
-      : await opts.provider.generate(request);
+    // Vaan doesn't stream, so the wait between here and the reply is the whole
+    // wait. Say so, rather than leaving the terminal looking hung.
+    opts.onEvent?.({ type: "thinking", step: steps });
+    const reply = await opts.provider.generate(request);
 
     if (reply.usage) {
       usage = {
@@ -117,7 +117,7 @@ export async function continueAgent(
     if (reply.stop === "pause") continue;
 
     const text = textOf(reply.message);
-    if (text && !opts.stream) opts.onEvent?.({ type: "text", text });
+    if (text) opts.onEvent?.({ type: "text", text });
 
     const calls = reply.message.parts.filter(isToolCall);
     if (calls.length === 0) return { text, messages, usedTools, steps, ...(usage ? { usage } : {}) };
@@ -158,20 +158,6 @@ export async function continueAgent(
   const text = `Stopped after ${maxSteps} steps without reaching an answer.`;
   trace?.record({ kind: "error", where: "agent", message: text });
   return { text, messages, usedTools, steps, ...(usage ? { usage } : {}) };
-}
-
-/** Drain a streamed turn, forwarding deltas, and hand back the assembled reply. */
-async function consume(
-  events: AsyncIterable<ModelEvent>,
-  onEvent: ((event: AgentEvent) => void) | undefined,
-): Promise<ProviderReply> {
-  let reply: ProviderReply | undefined;
-  for await (const event of events) {
-    if (event.type === "text") onEvent?.({ type: "delta", text: event.text });
-    else if (event.type === "done") reply = event.reply;
-  }
-  if (!reply) throw new Error("The provider's stream ended without finishing the turn.");
-  return reply;
 }
 
 /**

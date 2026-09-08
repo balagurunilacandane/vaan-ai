@@ -1,6 +1,5 @@
-// One POST with backoff, and one streaming POST. Every adapter goes through
-// here so retry behaviour is identical no matter which endpoint Vaan is pointed
-// at, and so there is one place that knows how to read a server-sent stream.
+// One POST with backoff. Every adapter goes through here so retry behaviour is
+// identical no matter which endpoint Vaan is pointed at.
 
 const RETRIES = 4;
 const BASE_DELAY_MS = 500;
@@ -57,71 +56,6 @@ export async function postJson(url: string, opts: PostOptions): Promise<unknown>
     ? lastError
     : ((lastError as { error?: Error })?.error ??
       new Error(`POST ${url} failed after ${RETRIES + 1} attempts`));
-}
-
-export interface SseFrame {
-  event?: string;
-  data: string;
-}
-
-/**
- * POST and read the response as server-sent events.
- *
- * Deliberately not retried. A stream that failed halfway has already handed the
- * caller half a turn, and replaying it from the top would duplicate whatever
- * was already yielded. The caller falls back to `generate` instead.
- */
-export async function* postSse(url: string, opts: PostOptions): AsyncGenerator<SseFrame> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "text/event-stream", ...opts.headers },
-    body: JSON.stringify(opts.body),
-    signal: opts.signal,
-  });
-
-  if (!response.ok) {
-    throw new HttpError(response.status, await response.text().catch(() => ""), url);
-  }
-  if (!response.body) throw new Error(`${new URL(url).host} sent no body to stream.`);
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-    buffer += decoder.decode(chunk, { stream: true });
-    // Frames are separated by a blank line. Anything after the last one is a
-    // partial frame and stays in the buffer until the rest of it arrives.
-    let split = buffer.indexOf("\n\n");
-    while (split !== -1) {
-      const frame = parseFrame(buffer.slice(0, split));
-      buffer = buffer.slice(split + 2);
-      if (frame) yield frame;
-      split = buffer.indexOf("\n\n");
-    }
-  }
-  const last = parseFrame(buffer);
-  if (last) yield last;
-}
-
-function parseFrame(raw: string): SseFrame | undefined {
-  let event: string | undefined;
-  const data: string[] = [];
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) data.push(line.slice(5).trim());
-  }
-  if (data.length === 0) return undefined;
-  return { ...(event ? { event } : {}), data: data.join("\n") };
-}
-
-/** SSE payloads are JSON, except when they're a sentinel like `[DONE]`. */
-export function parseFrameData(data: string): unknown {
-  if (data === "[DONE]") return undefined;
-  try {
-    return JSON.parse(data);
-  } catch {
-    return undefined;
-  }
 }
 
 const isRetryable = (status: number) => status === 429 || status >= 500;

@@ -8,10 +8,9 @@
 //      but most compatible servers only accept the old name. We send the name
 //      that works everywhere.
 
-import { parseFrameData, postJson, postSse } from "../http.js";
+import { postJson } from "../http.js";
 import type {
   Message,
-  ModelEvent,
   Part,
   Provider,
   ProviderReply,
@@ -19,7 +18,7 @@ import type {
   StopReason,
   Tool,
 } from "../types.js";
-import { fallbackStream, isRecord, parseArguments, type AdapterOptions } from "./shared.js";
+import { isRecord, parseArguments, type AdapterOptions } from "./shared.js";
 
 interface WireToolCall {
   id?: string;
@@ -40,11 +39,6 @@ interface Response {
 export type OpenAIOptions = AdapterOptions;
 
 export function openaiProvider(opts: OpenAIOptions): Provider {
-  // Flipped off the first time an endpoint turns out not to speak SSE, so a
-  // gateway without streaming costs one wasted request rather than one per
-  // turn for the life of the session.
-  const streaming = { on: true };
-
   const generate = async (req: ProviderRequest): Promise<ProviderReply> => {
     const json = (await postJson(`${opts.baseUrl}/chat/completions`, {
       // Ollama and friends ignore the header; sending it unconditionally is
@@ -60,10 +54,6 @@ export function openaiProvider(opts: OpenAIOptions): Provider {
     name: opts.name,
     ...(opts.envKey ? { envKey: opts.envKey } : {}),
     generate,
-    stream(req) {
-      if (!streaming.on) return fallbackStream(generate, req);
-      return streamCompletions(opts, req, generate, streaming);
-    },
   };
 }
 
@@ -151,116 +141,4 @@ function toStopReason(reason: string | undefined): StopReason {
       // There is no `pause_turn` equivalent in this shape.
       return "done";
   }
-}
-
-// ---------------------------------------------------------------------------
-// Streaming.
-
-interface Delta {
-  content?: string | null;
-  tool_calls?: WireToolCall[];
-}
-
-interface StreamChunk {
-  choices?: { delta?: Delta; finish_reason?: string }[];
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
-}
-
-/**
- * Reassemble a streamed completion into the same message `generate` returns.
- *
- * Tool calls arrive as fragments keyed by `index`, not by id — the id itself
- * only appears in the first fragment — so they're accumulated positionally and
- * only announced once the stream is done and the arguments are complete JSON.
- */
-async function* streamCompletions(
-  opts: OpenAIOptions,
-  req: ProviderRequest,
-  generate: (req: ProviderRequest) => Promise<ProviderReply>,
-  streaming: { on: boolean },
-): AsyncGenerator<ModelEvent> {
-  const calls: WireToolCall[] = [];
-  let text = "";
-  let finish: string | undefined;
-  let usage: { input: number; output: number } | undefined;
-  let yielded = false;
-
-  try {
-    const frames = postSse(`${opts.baseUrl}/chat/completions`, {
-      headers: { authorization: `Bearer ${opts.apiKey}` },
-      body: wireBody(req, true),
-      ...(req.signal ? { signal: req.signal } : {}),
-    });
-
-    for await (const frame of frames) {
-      const chunk = parseFrameData(frame.data) as StreamChunk | undefined;
-      if (!chunk) continue;
-
-      if (chunk.usage) {
-        usage = {
-          input: chunk.usage.prompt_tokens ?? 0,
-          output: chunk.usage.completion_tokens ?? 0,
-        };
-      }
-
-      const choice = chunk.choices?.[0];
-      if (!choice) continue;
-      if (choice.finish_reason) finish = choice.finish_reason;
-
-      const content = choice.delta?.content;
-      if (content) {
-        text += content;
-        yielded = true;
-        yield { type: "text", text: content };
-      }
-
-      for (const fragment of choice.delta?.tool_calls ?? []) {
-        const index = fragment.index ?? calls.length;
-        const existing = calls[index] ?? { function: { name: "", arguments: "" } };
-        calls[index] = {
-          id: fragment.id ?? existing.id,
-          index,
-          function: {
-            name: fragment.function?.name ?? existing.function?.name,
-            arguments: (existing.function?.arguments ?? "") + (fragment.function?.arguments ?? ""),
-          },
-        };
-      }
-    }
-  } catch (err) {
-    if (!yielded) {
-      // Nothing has been handed over yet, so starting again is invisible.
-      streaming.on = false;
-      yield* fallbackStream(generate, req);
-      return;
-    }
-    throw err;
-  }
-
-  // See the note in anthropic.ts: a 200 that isn't an event stream yields
-  // nothing and throws nothing, so an empty result means fall back.
-  if (!yielded && calls.length === 0 && !text) {
-    streaming.on = false;
-    yield* fallbackStream(generate, req);
-    return;
-  }
-
-  const assembled: WireMessage = {
-    ...(text ? { content: text } : {}),
-    ...(calls.length ? { tool_calls: calls.filter((call) => call !== undefined) } : {}),
-  };
-  for (const part of partsOf(assembled)) {
-    if (part.type === "tool_call") {
-      yield { type: "tool_call", id: part.id, name: part.name, input: part.input };
-    }
-  }
-
-  yield {
-    type: "done",
-    reply: {
-      message: { role: "assistant", parts: partsOf(assembled), raw: assembled },
-      stop: toStopReason(finish),
-      ...(usage ? { usage } : {}),
-    },
-  };
 }

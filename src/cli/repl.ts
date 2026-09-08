@@ -23,6 +23,7 @@ import { activeGroups, GROUPS } from "../tools/index.js";
 import { printMemory } from "./memory-cmd.js";
 import { configFile } from "../paths.js";
 import { VERSION } from "./wizard.js";
+import { createSpinner } from "./spinner.js";
 import { render } from "./trace-cmd.js";
 import {
   ASK,
@@ -85,7 +86,7 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
     const controller = new AbortController();
     const interrupt = () => controller.abort();
     rl.once("SIGINT", interrupt);
-    let streamed = false;
+    const spinner = createSpinner({ out, theme: t, animate: out.isTTY === true });
     try {
       out.write("\n");
       const result = await session.ask(line, {
@@ -94,36 +95,42 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
           lastRequestId = request.id;
         },
         onRecall: (used) => {
-          if (!used) out.write(`${t.faint(`  ${DOT} no memory needed`)}\n\n`);
+          spinner.start(used ? "recalling" : "thinking");
         },
         onEvent: (event) => {
-          if (event.type === "delta") {
-            if (!streamed) streamed = true;
-            out.write(event.text);
-          }
+          if (event.type === "thinking") spinner.start("thinking");
+
           if (event.type === "tool_call") {
+            spinner.stop();
             const args = describeInput(event.input);
             out.write(
-              `${streamed ? "\n\n" : ""}${t.lime(STEP)} ${t.lime(event.name)}` +
-                `${args ? ` ${t.dim(args)}` : ""}\n`,
+              `${t.lime(STEP)} ${t.lime(event.name)}${args ? ` ${t.dim(args)}` : ""}\n`,
             );
-            streamed = false;
           }
+
           if (event.type === "tool_result") {
             const summary = summariseOutput(event.output);
-            const timing = `${DOT} ${duration(event.ms)}`;
-            const body = `  ${summary}  ${timing}`;
+            const body = `  ${summary}  ${DOT} ${duration(event.ms)}`;
             out.write(event.isError ? `${t.red(body)}\n\n` : `${t.dim(body)}\n\n`);
+            // Back to waiting on the model until it says otherwise.
+            spinner.start("thinking");
           }
+
+          if (event.type === "text") spinner.stop();
         },
       });
-      // Streaming already printed the text as it arrived; printing result.text
-      // again would double every answer.
-      out.write(streamed ? "\n\n" : `${result.text}\n\n`);
+      spinner.stop();
+      out.write(`${result.text}\n\n`);
       footer(out, session, lastRequestId, t);
     } catch (err) {
-      out.write(controller.signal.aborted ? `  ${t.dim("interrupted")}\n\n` : `  ${t.red(message(err))}\n\n`);
+      spinner.stop();
+      out.write(
+        controller.signal.aborted
+          ? `  ${t.dim("interrupted")}\n\n`
+          : `  ${t.red(message(err))}\n\n`,
+      );
     } finally {
+      spinner.stop();
       rl.off("SIGINT", interrupt);
     }
   }
@@ -180,7 +187,6 @@ function open(opts: ReplOptions, rl: Interface, t: Theme): Session {
     memory: opts.memory,
     yes: opts.yes,
     trace: opts.trace,
-    stream: true,
     env: opts.env,
 
     // Whether. The gate calls this, and only a person can answer it.

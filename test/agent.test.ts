@@ -162,11 +162,25 @@ test("usedTools records the trajectory, failures included", async () => {
   assert.deepEqual((await result).usedTools, ["echo", "boom"]);
 });
 
-test("events are emitted for text and for every tool call", async () => {
+test("events are emitted for every round-trip, tool call and answer", async () => {
   const seen: string[] = [];
   const { result } = run([calls({ id: "a", name: "echo" }), says("done")], [echo], {
     onEvent: (event) => seen.push(event.type),
   });
   await result;
-  assert.deepEqual(seen, ["tool_call", "tool_result", "text"]);
+  // `thinking` opens each round-trip: without streaming it is the only sign
+  // that anything is happening while the model composes a reply.
+  assert.deepEqual(seen, ["thinking", "tool_call", "tool_result", "thinking", "text"]);
+});
+
+test("tool results carry how long the tool took", async () => {
+  const durations: number[] = [];
+  const { result } = run([calls({ id: "a", name: "slow" }), says("done")], [slow], {
+    onEvent: (event) => {
+      if (event.type === "tool_result") durations.push(event.ms);
+    },
+  });
+  await result;
+  assert.equal(durations.length, 1);
+  assert.ok((durations[0] ?? 0) >= 10, "the slow tool sleeps 10ms");
 });

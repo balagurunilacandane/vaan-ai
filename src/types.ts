@@ -143,22 +143,10 @@ export interface ProviderReply {
   usage?: Usage;
 }
 
-/** What `stream` yields. `done` always arrives last, and carries the whole reply. */
-export type ModelEvent =
-  | { type: "text"; text: string }
-  | { type: "tool_call"; id: string; name: string; input: unknown }
-  | { type: "done"; reply: ProviderReply };
-
 export interface Provider {
   /** Registry prefix, e.g. "anthropic" in `anthropic/claude-opus-4-8`. */
   name: string;
   /** Env var holding this provider's key, if it needs one. `/model` reports it. */
   envKey?: string;
   generate(req: ProviderRequest): Promise<ProviderReply>;
-  /**
-   * The same turn, incrementally. Adapters without a streaming endpoint satisfy
-   * this with `fallbackStream`, which yields one text event and then `done` —
-   * correct, just not incremental.
-   */
-  stream(req: ProviderRequest): AsyncIterable<ModelEvent>;
 }

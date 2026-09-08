@@ -10,10 +10,9 @@
 //   3. An OBJECT schema with no properties is rejected, so a no-argument tool
 //      ships without a `parameters` field at all.
 
-import { parseFrameData, postJson, postSse } from "../http.js";
+import { postJson } from "../http.js";
 import type {
   Message,
-  ModelEvent,
   Part,
   Provider,
   ProviderReply,
@@ -21,7 +20,7 @@ import type {
   StopReason,
   Tool,
 } from "../types.js";
-import { fallbackStream, type AdapterOptions } from "./shared.js";
+import type { AdapterOptions } from "./shared.js";
 
 /** Separator for synthesised call ids. Not legal in a tool name, so it round-trips. */
 const ID_SEPARATOR = "::";
@@ -45,11 +44,6 @@ interface Response {
 export type GoogleOptions = AdapterOptions;
 
 export function googleProvider(opts: GoogleOptions): Provider {
-  // Flipped off the first time an endpoint turns out not to speak SSE, so a
-  // gateway without streaming costs one wasted request rather than one per
-  // turn for the life of the session.
-  const streaming = { on: true };
-
   const generate = async (req: ProviderRequest): Promise<ProviderReply> => {
     const json = (await postJson(endpoint(opts, req.model, "generateContent"), {
       headers: keyHeader(opts.apiKey),
@@ -63,10 +57,6 @@ export function googleProvider(opts: GoogleOptions): Provider {
     name: opts.name,
     ...(opts.envKey ? { envKey: opts.envKey } : {}),
     generate,
-    stream(req) {
-      if (!streaming.on) return fallbackStream(generate, req);
-      return streamContent(opts, req, generate, streaming);
-    },
   };
 }
 
@@ -179,85 +169,3 @@ function toStopReason(reason: string | undefined, parts: Part[]): StopReason {
 
 const isWireContent = (value: unknown): value is { parts?: WirePart[] } =>
   typeof value === "object" && value !== null && "parts" in value;
-
-// ---------------------------------------------------------------------------
-// Streaming.
-
-/**
- * `?alt=sse` sends whole candidate chunks rather than field-level deltas, so
- * reassembly is concatenation: text accumulates, and function calls arrive
- * complete in a single chunk.
- */
-async function* streamContent(
-  opts: GoogleOptions,
-  req: ProviderRequest,
-  generate: (req: ProviderRequest) => Promise<ProviderReply>,
-  streaming: { on: boolean },
-): AsyncGenerator<ModelEvent> {
-  const collected: WirePart[] = [];
-  let finish: string | undefined;
-  let usage: { input: number; output: number } | undefined;
-  let yielded = false;
-
-  try {
-    const frames = postSse(endpoint(opts, req.model, "streamGenerateContent"), {
-      headers: keyHeader(opts.apiKey),
-      body: wireBody(req),
-      ...(req.signal ? { signal: req.signal } : {}),
-    });
-
-    for await (const frame of frames) {
-      const chunk = parseFrameData(frame.data) as Response | undefined;
-      if (!chunk) continue;
-      if (chunk.usageMetadata) {
-        usage = {
-          input: chunk.usageMetadata.promptTokenCount ?? 0,
-          output: chunk.usageMetadata.candidatesTokenCount ?? 0,
-        };
-      }
-      const candidate = chunk.candidates?.[0];
-      if (candidate?.finishReason) finish = candidate.finishReason;
-
-      for (const wire of candidate?.content?.parts ?? []) {
-        collected.push(wire);
-        if (wire.text) {
-          yielded = true;
-          yield { type: "text", text: wire.text };
-        } else if (wire.functionCall?.name) {
-          yielded = true;
-          yield {
-            type: "tool_call",
-            id: `${wire.functionCall.name}${ID_SEPARATOR}${collected.length - 1}`,
-            name: wire.functionCall.name,
-            input: wire.functionCall.args ?? {},
-          };
-        }
-      }
-    }
-  } catch (err) {
-    if (!yielded) {
-      // Nothing has been handed over yet, so starting again is invisible.
-      streaming.on = false;
-      yield* fallbackStream(generate, req);
-      return;
-    }
-    throw err;
-  }
-
-  // See the note in anthropic.ts.
-  if (!yielded && collected.length === 0) {
-    streaming.on = false;
-    yield* fallbackStream(generate, req);
-    return;
-  }
-
-  const parts = partsOf(collected);
-  yield {
-    type: "done",
-    reply: {
-      message: { role: "assistant", parts, raw: { parts: collected, role: "model" } },
-      stop: toStopReason(finish, parts),
-      ...(usage ? { usage } : {}),
-    },
-  };
-}

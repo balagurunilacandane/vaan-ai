@@ -1,7 +1,6 @@
 // A Provider that reads from a script instead of the network. Every test in
 // this repo runs offline and without an API key; this is how.
 
-import { fallbackStream } from "../src/providers/shared.js";
 import type {
   Message,
   Provider,
@@ -32,7 +31,6 @@ export function scripted(replies: ProviderReply[]): ScriptedProvider {
     name: "scripted",
     requests,
     generate,
-    stream: (req) => fallbackStream(generate, req),
   };
 }
 

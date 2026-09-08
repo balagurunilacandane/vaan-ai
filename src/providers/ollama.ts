@@ -27,13 +27,6 @@ export function ollamaProvider(opts: OllamaOptions): Provider {
         throw explain(err, opts.baseUrl, req.model);
       }
     },
-    async *stream(req) {
-      try {
-        yield* inner.stream(req);
-      } catch (err) {
-        throw explain(err, opts.baseUrl, req.model);
-      }
-    },
   };
 }
 
