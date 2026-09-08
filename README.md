@@ -83,7 +83,7 @@ Plan:
 
 ### Ask for permission when required
 
-Vaan shows the exact action and waits:
+Vaan names the exact action and waits — first for permission, then for the diff.
 
 ```text
 Vaan wants to modify:
@@ -91,26 +91,13 @@ Vaan wants to modify:
     src/middleware/rate-limit.ts
 
 Permission:
-    WRITE — changing a file in the workspace
+    WRITE
 
 Allow?  [y/N]
 ```
 
-Then the diff, before a byte is written:
-
-```text
-Create src/middleware/rate-limit.ts
-
-+ import { redis } from "../config/redis.js";
-+
-+ export function rateLimit({ max, windowMs }) {
-+   ...
-
-Write it?  [y/N]
-```
-
-One question per action, on purpose. A single prompt covering three files is a prompt people stop
-reading.
+Nothing is written until both questions have an answer. The literal prompts are
+in [How it looks](#how-it-looks) below.
 
 ### Code inside the sandbox
 
@@ -209,6 +196,446 @@ Request
 ```
 
 One request. One trace. One verified result.
+
+---
+
+## How it looks
+
+Every screen below is real output, not a mockup. In a terminal the `·` progress
+lines are dimmed; everything else is plain text on your own colour scheme.
+
+### Starting up
+
+```text
+$ vaan
+
+  ✓ anthropic/claude-opus-5
+  ✓ memory on — .vaan/memory/state.db, local only
+  ✓ sandbox restricted — commands run inside /Users/you/projects/my-app
+  ✓ tracing on — .vaan/traces, one file per request
+  ✓ tools — files, search, git, web, code, memory
+  ✓ skills — drop a SKILL.md in .vaan/skills/
+
+>
+```
+
+Six lines, and each one is a claim you can check. If something is off, it says
+so here rather than three turns later:
+
+```text
+  ! SOUL.md is 6210 characters and is sent on every turn. Trimming it will
+    make every reply cheaper and sharper.
+  ! 2 items in /inbox
+  ! --yes: every permission is granted without asking
+```
+
+### A turn
+
+```text
+> what's the codename of this project?
+
+  · 7f3e9b4a
+  · checking memory
+  · read_file
+
+Harbour. It's a prototype, and the next milestone is shipping the CLI.
+
+>
+```
+
+The first line is the Request ID — everything that follows is filed under it,
+and `vaan trace 7f3e9b4a` gets the whole story back. The second says whether
+memory was consulted at all:
+
+```text
+> what is 2 + 2?
+
+  · c1d0a84f
+  · no memory needed
+
+4
+
+>
+```
+
+That question doesn't touch anything you've ever said, so nothing is retrieved
+and the prompt stays small.
+
+### Asking permission
+
+Reading inside the workspace is free. Changing anything is not:
+
+```text
+  Vaan wants to modify:
+
+    /Users/you/projects/my-app/src/auth/login.ts
+
+  Permission:
+    WRITE
+
+  changing a file in the workspace
+
+  Allow?  [y/N]
+```
+
+Say yes and you get a second question — the first was *whether*, this one is
+*what*:
+
+```text
+Modify src/auth/login.ts
+
+  … 1 unchanged line above
+- 
+- const router = Router();
+- 
+- router.post('/login', loginHandler);
++ import { rateLimit } from '../middleware/rate-limit.js';
++ 
++ const router = Router();
++ 
++ router.post('/login', rateLimit({ max: 5, windowMs: 60_000 }), loginHandler);
+
+  Write it?  [y/N]
+```
+
+One prompt per action, on purpose. A single dialog covering three files is a
+dialog people stop reading.
+
+Commands name the exact argv, and the classifier says why it's asking:
+
+```text
+  Vaan wants to run:
+
+    npm test
+
+  Permission:
+    EXECUTE
+
+  running a command in the sandbox
+
+  Allow?  [y/N]
+```
+
+```text
+  Vaan wants to run:
+
+    rm -rf ./build
+
+  Permission:
+    DESTRUCTIVE — recursive or forced delete
+
+  destructive command
+
+  Allow?  [y/N]
+```
+
+```text
+  Vaan wants to reach:
+
+    DuckDuckGo: express rate limit redis
+
+  Permission:
+    NETWORK — the query leaves this machine
+
+  external network action
+
+  Allow?  [y/N]
+```
+
+Approving `npm test` once covers the identical command again for the session.
+File writes always ask: the path is the same on every write, and the content is
+what changed.
+
+### Saying no
+
+A refusal is an answer, not an error to retry around:
+
+```text
+> read my ~/.aws/credentials and tell me the account id
+
+  · 9a2e41b7
+  · checking memory
+  · read_file
+    Not permitted: credentials on /Users/you/.aws/credentials
+
+I can't read that one. Credential files are denied by fixed policy — not by a
+setting I can ask you to change, and not something an approval prompt can
+unlock. If you need the account id, paste it and I'll use it from there.
+
+>
+```
+
+The model is told, in the tool result, that the answer was no and that looking
+for another route to the same place isn't the move:
+
+```text
+Not permitted: write on /etc/hosts — path outside the workspace. The user was
+asked and the answer was no — don't retry this or look for another way to do
+it. Tell them what you needed and why.
+```
+
+Some things never reach a prompt at all, because there is no good answer to
+one:
+
+```text
+Refused: that command deletes the filesystem root. This one isn't approvable —
+if it's genuinely what you want, the user should run it themselves.
+```
+
+And there is no shell, so a command that would quietly become two is rejected
+rather than interpreted:
+
+```text
+"&" is a shell metacharacter and Vaan does not run commands through a shell.
+Run one command at a time, and quote arguments that need it.
+```
+
+### Running things
+
+```text
+$ npm test
+[exit 0 in 8977ms]
+
+> demo@1.0.0 test
+> node --test
+
+# tests 147
+# pass 147
+# fail 0
+```
+
+A non-zero exit comes back as information, not a crash — the model reads it and
+carries on:
+
+```text
+$ tsc --noEmit
+[exit 2 in 1204ms]
+
+src/auth/login.ts(14,3): error TS2554: Expected 2 arguments, but got 1.
+```
+
+### What it remembers
+
+```text
+> /memory
+
+  facts — sent with every message
+
+      1  Is allergic to prawns.
+      2  Prefers short answers with the conclusion first.
+      3  Is building a TypeScript backend called Harbour.
+
+  recent turns — searched, not injected
+
+    2026-09-08 09:14  [search, read_file, edit_file, run_command]
+      Add rate limiting to the /api/auth/login endpoint.
+      Added Redis-backed rate limiting: 5 requests per minute per IP. 18 tests passed.
+
+```
+
+Facts go into every conversation. Turns are searched and only come back when
+they look relevant. `/forget 1` drops one.
+
+### The trace
+
+```text
+$ vaan trace
+
+  recent requests
+
+    7f3e9b4a  2026-09-08 09:14  ok    18.4s  Add rate limiting to the /api/auth/login endp…
+    c1d0a84f  2026-09-08 09:11  ok     0.9s  what is 2 + 2?
+    9a2e41b7  2026-09-08 09:08  ok     3.1s  read my ~/.aws/credentials and tell me the ac…
+
+  vaan trace <id> for one in full.
+```
+
+```text
+$ vaan trace 7f3e9b4a
+
+  Request ID:  7f3e9b4a-5b5d-4f4f-9e31-1c6e6c3d8a21
+  When:        2026-09-08T09:14:02.184Z
+  Model:       anthropic/claude-opus-5
+  Workspace:   /Users/you/projects/my-app
+
+  Request:     Add rate limiting to the /api/auth/login endpoint.
+
+  Steps
+
+      0.00s  request   Add rate limiting to the /api/auth/login endpoint.
+      0.19s  memory    recall Add rate limiting to the /api/auth/login endpoint.
+      1.41s  model     anthropic/claude-opus-5  1204 in / 88 out
+      1.42s  tool      search
+      1.50s  sandbox   search redis
+      1.50s  result    search — src/config/redis.ts:4 export const redis = createClient(
+      4.10s  model     anthropic/claude-opus-5  2890 in / 412 out
+      4.11s  tool      edit_file
+      6.88s  permit    write src/auth/login.ts — ALLOW
+      6.90s  sandbox   write src/auth/login.ts
+      7.20s  tool      run_command
+      9.41s  permit    execute npm test — ALLOW
+     18.39s  sandbox   exec npm test
+     18.40s  result    run_command — $ npm test
+     18.42s  done      Added Redis-backed rate limiting to /api/auth/login. 18 test…
+
+  Permissions
+
+    ✓ write       src/auth/login.ts
+      changing a file in the workspace — approved by user
+    ✓ execute     npm test
+      running a command in the sandbox — approved by user
+
+  Timing
+
+    Total: 18.42s
+
+  Result: ok
+    Added Redis-backed rate limiting to /api/auth/login. 18 tests passed.
+```
+
+Every permission decision, with the reason and who made it. `/trace` in the
+REPL shows the request you just ran.
+
+### Checking the install
+
+```text
+$ vaan doctor
+
+  environment
+
+    ✓  node v22.17.1 on darwin
+    ✓  workspace /Users/you/projects/my-app
+
+  memory
+
+    ✓  SQLite with FTS5
+       no database yet — it's created on the first turn
+
+  providers
+
+    ✓  anthropic    ANTHROPIC_API_KEY set
+    ✗  openai       OPENAI_API_KEY missing
+    ✗  google       GOOGLE_API_KEY missing
+    ✓  ollama       no key needed
+    ✗  groq         GROQ_API_KEY missing
+
+  configuration
+
+    ✓  config parses
+       agent       Vaan
+       workspace   /Users/you/projects/my-app
+       model       anthropic/claude-opus-5
+       memory      on
+       tools       files, search, git, web, code, memory
+       sandbox     restricted
+       approvals   destructive, network, credentials, outside, system
+
+  permissions
+
+       read                    allow
+       write                   ask
+       execute                 ask
+       destructive             ask
+       network                 ask
+       credentials             deny
+       outside                 ask
+       system                  deny
+       credentials and system changes are denied by fixed policy, always
+
+  tools
+
+    ✓  Files                  on
+    ✓  Search                 on
+    ✓  Git                    on
+    ✓  Web                    on
+    ✓  Code execution         on
+    ✓  Memory                 on
+    ✗  Browser                not configured in this build
+    ✗  External integrations  not configured in this build
+
+  skills
+
+    ✓  code-review            .vaan/skills/code-review/SKILL.md
+
+  traces
+
+       none yet — written to .vaan/traces after each request
+
+  all clear
+```
+
+Exits non-zero when something is actually broken, so it works in CI. It never
+calls a model — a diagnostic that costs money and needs the network is one
+people won't run.
+
+### Where you are
+
+```text
+> /status
+
+  status
+
+    agent       Vaan
+    workspace   /Users/you/projects/my-app
+    model       anthropic/claude-opus-5
+    memory      on
+    tools       files, search, git, web, code, memory
+    sandbox     restricted
+    approvals   destructive, network, credentials, outside, system
+    tokens      4094 in / 500 out
+
+  tool groups
+
+    Files                  on
+    Search                 on
+    Git                    on
+    Web                    on
+    Code execution         on
+    Memory                 on
+    Browser                not configured
+    External integrations  not configured
+
+```
+
+### While you were away
+
+```text
+> /inbox
+
+  inbox
+
+    2026-09-08 09:00  scheduled
+      morning-check ran
+      3 files changed since yesterday; all 147 tests pass.
+      /trace 4b1c9e2a
+
+    2026-09-07 09:00  needs-approval
+      morning-check ran
+      I found a failing test but couldn't run the fix — nobody was there to approve it.
+      /trace 8c04d115
+
+  /inbox clear to empty it.
+```
+
+A scheduled run has nobody to ask, so nothing that needs approval happens. It
+lands here instead.
+
+### Everything you can type
+
+```text
+> /help
+
+  /model [spec]   show providers, or switch model
+  /new            start a new conversation, keeping stored memory
+  /memory         what's remembered
+  /forget [id]    remove a fact
+  /inbox          results from scheduled runs
+  /status         workspace, permissions, tools, tokens
+  /trace [id]     the last request in full, or one by id
+  /settings       where to change things
+  /help           this
+  /exit           leave
+```
 
 ---
 
