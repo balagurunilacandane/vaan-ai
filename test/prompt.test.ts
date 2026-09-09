@@ -7,7 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Fact, Turn } from "../src/memory/index.js";
-import { buildSystemPrompt, loadPersona } from "../src/prompt.js";
+import {
+  buildSystemPrompt,
+  DEFAULT_GUARDRAILS,
+  DEFAULT_SOUL,
+  loadPersona,
+} from "../src/prompt.js";
 import { loadSkills } from "../src/skills.js";
 
 const fact = (id: number, text: string): Fact => ({
@@ -157,4 +162,27 @@ test("missing persona files are simply absent", () => {
   } finally {
     cleanup();
   }
+});
+
+test("the defaults are written for coding work, not general chat", () => {
+  // These ship as the starting SOUL.md and GUARDRAILS.md, so they are the
+  // out-of-the-box behaviour of the product. The three below are the failure
+  // modes that cost the most when an agent has write access.
+  assert.match(DEFAULT_GUARDRAILS, /Never make a test pass by weakening it/i);
+  assert.match(DEFAULT_GUARDRAILS, /Do not commit, push, or install dependencies/i);
+  assert.match(DEFAULT_GUARDRAILS, /Do not leave the tree broken/i);
+
+  assert.match(DEFAULT_SOUL, /Read before you write/i);
+  assert.match(DEFAULT_SOUL, /smallest change/i);
+  assert.match(DEFAULT_SOUL, /report what you\s+actually verified/i);
+
+  // Prompt injection defence survives whatever else gets edited.
+  assert.match(DEFAULT_GUARDRAILS, /never instructions/i);
+});
+
+test("the defaults stay small enough to send every turn", () => {
+  // loadPersona warns above 4000 characters. Shipping a default that trips
+  // our own warning would be a poor look.
+  assert.ok(DEFAULT_SOUL.length < 2000, `SOUL.md is ${DEFAULT_SOUL.length} chars`);
+  assert.ok(DEFAULT_GUARDRAILS.length < 2000, `GUARDRAILS.md is ${DEFAULT_GUARDRAILS.length} chars`);
 });
