@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline/promises";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve as resolvePath } from "node:path";
 import {
   DEFAULT_AGENT_NAME,
@@ -32,8 +33,24 @@ import type { ToolGroup } from "../types.js";
 import { INSTALL_HINT, launchCommand, viaNpx } from "../invocation.js";
 import { updateEnvFile } from "./dotenv.js";
 import { CUSTOM_NOTE, DEFAULT_MODEL, SUGGESTED } from "./suggested.js";
+import { createTheme, DOT, type Theme } from "./theme.js";
 
 export const VERSION = "0.1.2";
+
+/**
+ * Say back what was just chosen.
+ *
+ * Every step ends with one of these. Without it the onboarding is nine
+ * questions and no answers: you press Enter on "keep them all" and the screen
+ * moves on, having never told you what "all" turned out to be.
+ */
+const chose = (out: NodeJS.WriteStream, t: Theme, text: string): void => {
+  out.write(`  ${t.lime("✓")} ${t.bright(text)}\n`);
+};
+
+/** A numbered option: dim number, readable label, dim note. */
+const option = (t: Theme, index: number, label: string, note = "", width = 26): string =>
+  `    ${t.dim(`${index})`)} ${label.padEnd(width)}${note ? t.dim(note) : ""}\n`;
 
 export interface WizardOptions {
   /** Where Vaan was launched. Step one can move it. */
@@ -49,7 +66,9 @@ export interface WizardResult {
 
 export async function runWizard(opts: WizardOptions): Promise<WizardResult | undefined> {
   const out = process.stdout;
-  out.write(`\n  Vaan ${VERSION}\n\n`);
+  const t = createTheme({ env: opts.env });
+  out.write(`\n  ${t.bold(t.lime("vaan"))} ${t.dim(VERSION)}\n`);
+  out.write(`  ${t.dim("let's get you set up")}\n\n`);
 
   const fts = probeFts5();
   if (fts) {
@@ -63,38 +82,47 @@ export async function runWizard(opts: WizardOptions): Promise<WizardResult | und
   const rl = createInterface({ input: process.stdin, output: out });
   try {
     // 1. Workspace
-    const workspace = await askWorkspace(rl, out, opts.cwd);
+    const workspace = await askWorkspace(rl, out, t, opts.cwd);
     if (!workspace) return undefined;
+    chose(out, t, workspace.replace(homedir(), "~"));
     const config = defaultConfig(workspace);
 
     // 2. Model  3. Authenticate
-    const model = await askModel(rl, out, opts, workspace);
+    const model = await askModel(rl, out, t, opts, workspace);
     if (!model) return undefined;
     config.model = model;
 
     // 4. Agent identity
+    out.write(`\n  ${t.bright("Agent identity")}\n`);
     config.agentName =
-      (await rl.question(`\n  Agent name  [${DEFAULT_AGENT_NAME}]  ? `)).trim() ||
+      (await rl.question(`  ${t.dim(`name [${DEFAULT_AGENT_NAME}]`)}  ? `)).trim() ||
       DEFAULT_AGENT_NAME;
+    chose(out, t, config.agentName);
 
     // 5. Memory
-    config.memory = await askYesNo(rl, out, "\n  Enable persistent project memory?", true);
+    config.memory = await askYesNo(rl, out, t, "Persistent project memory?", true);
+    chose(out, t, config.memory ? "memory on" : "memory off");
 
     // 6. Tools
-    config.tools = await askTools(rl, out);
+    config.tools = await askTools(rl, out, t);
+    chose(out, t, config.tools.join(", "));
 
     // 7. Sandbox
-    config.sandbox = await askSandbox(rl, out);
+    config.sandbox = await askSandbox(rl, out, t);
+    chose(out, t, `${config.sandbox.name} sandbox`);
     config.network.allowLocal = config.sandbox.allowLocalNetwork;
 
     // 8. Permissions
-    config.approvals = await askApprovals(rl, out);
+    config.approvals = await askApprovals(rl, out, t);
+    const required = Object.entries(config.approvals).filter(([, on]) => on).map(([n]) => n);
+    chose(out, t, required.length ? `approval for ${required.join(", ")}` : "no approvals required");
 
     // 9. Project configuration
-    await confirmFile(rl, out, opts.env, join(workspace, SOUL_FILE), DEFAULT_SOUL, SOUL_FILE);
+    await confirmFile(rl, out, t, opts.env, join(workspace, SOUL_FILE), DEFAULT_SOUL, SOUL_FILE);
     await confirmFile(
       rl,
       out,
+      t,
       opts.env,
       join(workspace, GUARDRAILS_FILE),
       DEFAULT_GUARDRAILS,
@@ -105,17 +133,17 @@ export async function runWizard(opts: WizardOptions): Promise<WizardResult | und
     updateEnvFile(workspace, { VAAN_MODEL: config.model });
     mkdirSync(skillsDir(workspace), { recursive: true });
 
-    out.write("\n  Checking that works… ");
+    out.write(`\n  ${t.dim("checking that works…")} `);
     const problem = await healthCheck(config.model, opts.env);
     if (problem) {
-      out.write(`\n\n  That call failed:\n  ${problem}\n\n`);
+      out.write(`\n\n  ${t.red("that call failed")}\n  ${t.dim(problem)}\n\n`);
       out.write(`  Fix it and run \`${launchCommand()} init\` again.\n\n`);
       return undefined;
     }
-    out.write("ok\n");
+    out.write(`${t.lime("ok")}\n`);
 
     // 10. Ready
-    ready(out, config);
+    ready(out, t, config);
     return { workspace, config };
   } finally {
     rl.close();
@@ -153,19 +181,21 @@ function unattended(opts: WizardOptions, out: NodeJS.WriteStream): WizardResult 
 async function askWorkspace(
   rl: Interface,
   out: NodeJS.WriteStream,
+  t: Theme,
   cwd: string,
 ): Promise<string | undefined> {
-  out.write("  Where should Vaan work?\n\n");
-  out.write(`    1) this directory      ${cwd}\n`);
-  out.write("    2) another directory\n\n");
+  out.write(`  ${t.bright("Workspace")}  ${t.dim(`${DOT} everything Vaan can see`)}\n\n`);
+  out.write(option(t, 1, "this directory", cwd.replace(homedir(), "~"), 18));
+  out.write(option(t, 2, "another directory", "", 18));
+  out.write("\n");
 
-  if ((await rl.question("  ? ")).trim() !== "2") return resolvePath(cwd);
+  if ((await rl.question(`  ${t.dim("?")} `)).trim() !== "2") return resolvePath(cwd);
 
-  const typed = (await rl.question("\n  Path  ? ")).trim();
+  const typed = (await rl.question(`\n  ${t.dim("path")}  ? `)).trim();
   if (!typed) return undefined;
   const chosen = isAbsolute(typed) ? typed : resolvePath(cwd, typed);
   if (!existsSync(chosen)) {
-    out.write(`\n  ${chosen} doesn't exist.\n\n`);
+    out.write(`\n  ${t.red(`${chosen} does not exist`)}\n\n`);
     return undefined;
   }
   // Everything Vaan may touch is decided from here, so it is resolved once and
@@ -178,23 +208,24 @@ async function askWorkspace(
 async function askModel(
   rl: Interface,
   out: NodeJS.WriteStream,
+  t: Theme,
   opts: WizardOptions,
   workspace: string,
 ): Promise<string | undefined> {
-  out.write("\n  Select your model:\n\n");
+  out.write(`\n  ${t.bright("Model")}  ${t.dim(`${DOT} cloud or local, no lock-in`)}\n\n`);
   SUGGESTED.forEach((entry, index) => {
-    out.write(`    ${index + 1}) ${entry.spec.padEnd(28)}${entry.note}\n`);
+    out.write(option(t, index + 1, entry.spec, entry.note, 28));
   });
-  out.write(`    ${SUGGESTED.length + 1}) ${"custom".padEnd(28)}${CUSTOM_NOTE}\n\n`);
-  out.write("  Pick a number, or type any provider/model.\n\n");
+  out.write(option(t, SUGGESTED.length + 1, "custom", CUSTOM_NOTE, 28));
+  out.write(`\n  ${t.dim("a number, or type any provider/model")}\n\n`);
 
-  const answer = (await rl.question("  ? ")).trim();
+  const answer = (await rl.question(`  ${t.dim("?")} `)).trim();
   const picked = SUGGESTED[Number(answer) - 1];
 
   let spec: string;
   if (picked) spec = picked.spec;
   else if (Number(answer) === SUGGESTED.length + 1) {
-    const custom = await askCustomProvider(rl, out, opts, workspace);
+    const custom = await askCustomProvider(rl, out, t, opts, workspace);
     if (!custom) return undefined;
     spec = custom;
   } else if (answer.includes("/")) {
@@ -202,27 +233,29 @@ async function askModel(
     // numbers are a convenience, not a list of what's allowed.
     spec = answer;
   } else {
-    out.write("\n  That's neither one of the numbers nor a provider/model string.\n\n");
+    out.write(`\n  ${t.red("not one of the numbers, and not a provider/model string")}\n\n`);
     return undefined;
   }
 
-  const key = await askKey(rl, out, opts, workspace, spec);
+  chose(out, t, spec);
+  const key = await askKey(rl, out, t, opts, workspace, spec);
   return key === false ? undefined : spec;
 }
 
 async function askCustomProvider(
   rl: Interface,
   out: NodeJS.WriteStream,
+  t: Theme,
   opts: WizardOptions,
   workspace: string,
 ): Promise<string | undefined> {
-  out.write("\n  Which API shape does it speak?\n\n");
+  out.write(`\n  ${t.bright("API shape")}\n\n`);
   SHAPES.forEach((entry, index) => {
-    out.write(`    ${index + 1}) ${entry.endpoint.padEnd(30)}${entry.note}\n`);
+    out.write(option(t, index + 1, entry.endpoint, entry.note, 30));
   });
   out.write("\n");
 
-  const chosen = SHAPES[Number((await rl.question("  ? ")).trim()) - 1];
+  const chosen = SHAPES[Number((await rl.question(`  ${t.dim("?")} `)).trim()) - 1];
   const shape: Shape = chosen && isShape(chosen.shape) ? chosen.shape : "openai";
 
   const name = (await rl.question("\n  A short name for it  ? ")).trim().toLowerCase();
@@ -257,6 +290,7 @@ async function askCustomProvider(
 async function askKey(
   rl: Interface,
   out: NodeJS.WriteStream,
+  t: Theme,
   opts: WizardOptions,
   workspace: string,
   spec: string,
@@ -264,7 +298,7 @@ async function askKey(
   const name = spec.slice(0, spec.indexOf("/")).toLowerCase();
   const found = registry(opts.env).find((entry) => entry.name === name);
   if (!found?.envKey) {
-    out.write(`\n  Selected model: ${spec}\n\n  No API key required.\n`);
+    out.write(`  ${t.lime("✓")} ${t.dim("no API key required")}\n`);
     return undefined;
   }
   // An existing key is offered for replacement rather than silently skipped.
@@ -274,25 +308,31 @@ async function askKey(
     (candidate) => opts.env[candidate],
   );
   if (existing) {
-    out.write(`\n  ${existing} is already set${fingerprint(opts.env[existing])}.\n`);
-    if (!(await askYesNo(rl, out, "  Replace it?", false))) return existing;
+    out.write(
+      `\n  ${t.bright("Credentials")}  ${t.dim(`${DOT} ${existing} is set${fingerprint(opts.env[existing])}`)}\n`,
+    );
+    if (!(await askYesNo(rl, out, t, "Replace it?", false))) {
+      chose(out, t, `keeping ${existing}`);
+      return existing;
+    }
   }
 
-  out.write(`\n  Selected model: ${spec}\n`);
   const key = await askSecret(
     rl,
     out,
-    `\n  ${existing ? "New " : ""}${label(name)} API key  ? `,
+    `\n  ${t.dim(`${existing ? "new " : ""}${label(name)} API key`)}  ? `,
   );
   if (!key) {
-    out.write(`\n  No key, no calls. Set it and run \`${launchCommand()} init\` again.\n\n`);
+    out.write(
+      `\n  ${t.red("no key, no calls")} ${t.dim(`${DOT} set one and run \`${launchCommand()} init\` again`)}\n\n`,
+    );
     return false;
   }
   opts.env[found.envKey] = key;
   // Clear any alternate name, or the old key could win on the next run.
   for (const alternate of found.altEnvKeys ?? []) delete opts.env[alternate];
   updateEnvFile(workspace, { [found.envKey]: key });
-  out.write(`  saved to .env as ${found.envKey}\n`);
+  out.write(`  ${t.lime("✓")} ${t.dim(`saved to .env as ${found.envKey}`)}\n`);
   return found.envKey;
 }
 
@@ -312,28 +352,39 @@ function fingerprint(key: string | undefined): string {
 async function askYesNo(
   rl: Interface,
   out: NodeJS.WriteStream,
+  t: Theme,
   question: string,
   fallback: boolean,
 ): Promise<boolean> {
-  out.write(`${question}\n\n`);
-  out.write(fallback ? "    Y) yes\n    n) no\n\n" : "    y) yes\n    N) no\n\n");
-  const answer = (await rl.question("  ? ")).trim().toLowerCase();
+  out.write(`\n  ${t.bright(question)}\n\n`);
+  out.write(
+    fallback
+      ? `    ${t.lime("Y")} yes   ${t.dim("n")} no\n\n`
+      : `    ${t.dim("y")} yes   ${t.lime("N")} no\n\n`,
+  );
+  const answer = (await rl.question(`  ${t.dim("?")} `)).trim().toLowerCase();
   if (!answer) return fallback;
   return answer.startsWith("y");
 }
 
-async function askTools(rl: Interface, out: NodeJS.WriteStream): Promise<ToolGroup[]> {
-  out.write("\n  Tools:\n\n");
+async function askTools(
+  rl: Interface,
+  out: NodeJS.WriteStream,
+  t: Theme,
+): Promise<ToolGroup[]> {
+  out.write(`\n  ${t.bright("Tools")}  ${t.dim(`${DOT} a group you turn off does not exist`)}\n\n`);
   const available = GROUPS.filter((group) => group.available);
   available.forEach((group, index) => {
-    out.write(`    ${index + 1}) [x] ${group.label.padEnd(18)}${group.note}\n`);
+    out.write(
+      `    ${t.dim(`${index + 1})`)} ${t.lime("[x]")} ${group.label.padEnd(22)}${t.dim(group.note)}\n`,
+    );
   });
   for (const group of GROUPS.filter((entry) => !entry.available)) {
-    out.write(`       [ ] ${group.label.padEnd(18)}${group.note}\n`);
+    out.write(`       ${t.faint("[ ]")} ${t.faint(group.label.padEnd(22))}${t.faint(group.note)}\n`);
   }
-  out.write("\n  Enter to keep them all, or type the numbers to turn off (e.g. 3 5).\n\n");
+  out.write(`\n  ${t.dim("enter to keep them all, or numbers to turn off (e.g. 3 5)")}\n\n`);
 
-  const answer = (await rl.question("  ? ")).trim();
+  const answer = (await rl.question(`  ${t.dim("?")} `)).trim();
   if (!answer) return available.map((group) => group.group);
 
   const off = new Set(
@@ -345,13 +396,14 @@ async function askTools(rl: Interface, out: NodeJS.WriteStream): Promise<ToolGro
   return available.filter((_, index) => !off.has(index + 1)).map((group) => group.group);
 }
 
-async function askSandbox(rl: Interface, out: NodeJS.WriteStream) {
-  out.write("\n  Coding sandbox:\n\n");
-  out.write("    1) restricted    every command re-approved, 60s limit   (default)\n");
-  out.write("    2) standard      repeat commands remembered, 5m limit\n");
-  out.write("    3) custom        edit .vaan/config/config.json yourself\n\n");
+async function askSandbox(rl: Interface, out: NodeJS.WriteStream, t: Theme) {
+  out.write(`\n  ${t.bright("Coding sandbox")}  ${t.dim(`${DOT} where commands run`)}\n\n`);
+  out.write(option(t, 1, "restricted", "every command re-approved, 60s limit  (default)", 12));
+  out.write(option(t, 2, "standard", "repeat commands remembered, 5m limit", 12));
+  out.write(option(t, 3, "custom", "edit .vaan/config/config.json yourself", 12));
+  out.write("\n");
 
-  const answer = (await rl.question("  ? ")).trim();
+  const answer = (await rl.question(`  ${t.dim("?")} `)).trim();
   const name: SandboxProfileName =
     answer === "2" ? "standard" : answer === "3" ? "custom" : "restricted";
   if (name === "custom") {
@@ -368,15 +420,19 @@ const APPROVAL_LABELS: { key: keyof ApprovalFlags; label: string }[] = [
   { key: "system", label: "System changes" },
 ];
 
-async function askApprovals(rl: Interface, out: NodeJS.WriteStream): Promise<ApprovalFlags> {
-  out.write("\n  Require approval for:\n\n");
+async function askApprovals(
+  rl: Interface,
+  out: NodeJS.WriteStream,
+  t: Theme,
+): Promise<ApprovalFlags> {
+  out.write(`\n  ${t.bright("Require approval for")}\n\n`);
   APPROVAL_LABELS.forEach((entry, index) => {
-    out.write(`    ${index + 1}) [x] ${entry.label}\n`);
+    out.write(`    ${t.dim(`${index + 1})`)} ${t.lime("[x]")} ${entry.label}\n`);
   });
-  out.write("\n  Enter to keep them all, or type the numbers to drop.\n");
-  out.write("  Credential access and system changes stay denied either way.\n\n");
+  out.write(`\n  ${t.dim("enter to keep them all, or numbers to drop")}\n`);
+  out.write(`  ${t.faint("credential access and system changes stay denied either way")}\n\n`);
 
-  const answer = (await rl.question("  ? ")).trim();
+  const answer = (await rl.question(`  ${t.dim("?")} `)).trim();
   const flags = { ...ALL_APPROVALS };
   if (!answer) return flags;
 
@@ -392,37 +448,50 @@ async function askApprovals(rl: Interface, out: NodeJS.WriteStream): Promise<App
 async function confirmFile(
   rl: Interface,
   out: NodeJS.WriteStream,
+  t: Theme,
   env: NodeJS.ProcessEnv,
   path: string,
   body: string,
   label: string,
 ): Promise<void> {
   if (existsSync(path)) {
-    out.write(`\n  ${label} already exists — leaving it alone.\n`);
+    chose(out, t, `${label} already exists, leaving it alone`);
     return;
   }
-  out.write(`\n${body.replace(/^/gm, "  ")}\n`);
-  const answer = (await rl.question("  Write this?  [Y] yes  [e] edit  [n] skip  "))
+  out.write(`\n  ${t.bright(label)}  ${t.dim(`${DOT} yours to edit, applies on the next message`)}\n`);
+  out.write(`\n${t.faint(body.replace(/^/gm, "  "))}\n`);
+  const answer = (
+    await rl.question(
+      `  ${t.dim("write this?")}  ${t.bright("[Y]")} yes  ${t.bright("[e]")} edit  ${t.bright("[n]")} skip  `,
+    )
+  )
     .trim()
     .toLowerCase();
-  if (answer === "n") return;
+  if (answer === "n") {
+    chose(out, t, `skipped ${label}`);
+    return;
+  }
   writeFileSync(path, body, "utf8");
   if (answer === "e") {
     const editor = env.VISUAL ?? env.EDITOR ?? "nano";
     spawnSync(editor, [path], { stdio: "inherit" });
   }
-  out.write(`  wrote ${label}\n`);
+  chose(out, t, `wrote ${label}`);
 }
 
 // --- Step 10 -----------------------------------------------------------------
 
-function ready(out: NodeJS.WriteStream, config: Config): void {
-  out.write("\n  Vaan is ready.\n\n");
-  out.write(`  Workspace: ${config.workspace}\n`);
-  out.write(`  Model: ${config.model}\n`);
-  out.write(`  Memory: ${config.memory ? "enabled" : "disabled"}\n`);
-  out.write(`  Sandbox: ${config.sandbox.name}\n`);
-  out.write(`  Tools: ${config.tools.join(", ")}\n\n`);
+function ready(out: NodeJS.WriteStream, t: Theme, config: Config): void {
+  const row = (label: string, value: string): string =>
+    `  ${t.dim(label.padEnd(11))}${t.bright(value)}\n`;
+
+  out.write(`\n  ${t.lime("✓")} ${t.bold(t.bright(`${config.agentName} is ready`))}\n\n`);
+  out.write(row("workspace", config.workspace.replace(homedir(), "~")));
+  out.write(row("model", config.model));
+  out.write(row("memory", config.memory ? "on" : "off"));
+  out.write(row("sandbox", config.sandbox.name));
+  out.write(row("tools", config.tools.join(", ")));
+  out.write("\n");
   // Nothing is on PATH after npx, and finding that out tomorrow is worse than
   // finding it out now.
   if (viaNpx()) out.write(`  ${INSTALL_HINT}\n\n`);
