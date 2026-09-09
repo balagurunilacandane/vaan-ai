@@ -5,6 +5,15 @@ export interface AdapterOptions {
   baseUrl: string;
   apiKey: string;
   envKey?: string;
+  /**
+   * Extra headers this endpoint requires, from the environment.
+   *
+   * Anthropic keys created at the organisation level rather than inside a
+   * workspace are rejected without `anthropic-workspace-id`, and the account
+   * shape is not something Vaan can infer — so it is configuration, like the
+   * base URL, rather than something to guess.
+   */
+  headers?: Record<string, string>;
 }
 
 /** Tool-call arguments arrive as a JSON string, and a model can emit bad JSON. */

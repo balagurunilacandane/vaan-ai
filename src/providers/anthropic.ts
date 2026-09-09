@@ -43,7 +43,7 @@ export type AnthropicOptions = AdapterOptions;
 export function anthropicProvider(opts: AnthropicOptions): Provider {
   const generate = async (req: ProviderRequest): Promise<ProviderReply> => {
     const json = (await postJson(`${opts.baseUrl}/v1/messages`, {
-      headers: headers(opts.apiKey),
+      headers: headers(opts),
       body: wireBody(req, false),
       ...(req.signal ? { signal: req.signal } : {}),
     })) as Response;
@@ -57,9 +57,10 @@ export function anthropicProvider(opts: AnthropicOptions): Provider {
   };
 }
 
-const headers = (apiKey: string): Record<string, string> => ({
-  "x-api-key": apiKey,
+const headers = (opts: AnthropicOptions): Record<string, string> => ({
+  "x-api-key": opts.apiKey,
   "anthropic-version": API_VERSION,
+  ...opts.headers,
 });
 
 function wireBody(req: ProviderRequest, stream: boolean): Record<string, unknown> {

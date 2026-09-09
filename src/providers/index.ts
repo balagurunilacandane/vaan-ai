@@ -132,13 +132,28 @@ export function build(spec: ProviderSpec, env: Env = process.env): Provider {
         `or run \`${launchCommand()} init\` to write one.`,
     );
   }
+  const extra = extraHeaders(spec, env);
   return customProvider({
     name: spec.name,
     shape: spec.shape,
     baseUrl: spec.baseUrl,
     apiKey,
     ...(spec.envKey ? { envKey: spec.envKey } : {}),
+    ...(Object.keys(extra).length ? { headers: extra } : {}),
   });
+}
+
+/**
+ * Headers an endpoint needs beyond authentication.
+ *
+ * Only one so far: an Anthropic key scoped to the organisation rather than to
+ * a workspace is refused with a 400 until the request names a workspace. The
+ * console gives you the id; `<PROVIDER>_WORKSPACE_ID` supplies it.
+ */
+export function extraHeaders(spec: ProviderSpec, env: Env): Record<string, string> {
+  if (spec.shape !== "anthropic") return {};
+  const workspace = env[`${spec.name.toUpperCase()}_WORKSPACE_ID`];
+  return workspace ? { "anthropic-workspace-id": workspace } : {};
 }
 
 export interface ProviderStatus extends ProviderSpec {

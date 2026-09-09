@@ -35,7 +35,7 @@ import { updateEnvFile } from "./dotenv.js";
 import { CUSTOM_NOTE, DEFAULT_MODEL, SUGGESTED } from "./suggested.js";
 import { createTheme, DOT, type Theme } from "./theme.js";
 
-export const VERSION = "0.1.3";
+export const VERSION = "0.1.4";
 
 /**
  * Say back what was just chosen.
@@ -136,8 +136,10 @@ export async function runWizard(opts: WizardOptions): Promise<WizardResult | und
     out.write(`\n  ${t.dim("checking that works…")} `);
     const problem = await healthCheck(config.model, opts.env);
     if (problem) {
-      out.write(`\n\n  ${t.red("that call failed")}\n  ${t.dim(problem)}\n\n`);
-      out.write(`  Fix it and run \`${launchCommand()} init\` again.\n\n`);
+      out.write(`\n\n  ${t.red("that call failed")}\n  ${t.dim(problem)}\n`);
+      const hint = advice(problem);
+      if (hint) out.write(`\n${hint.replace(/^/gm, "  ")}\n`);
+      out.write(`\n  ${t.dim(`then run \`${launchCommand()} init\` again`)}\n\n`);
       return undefined;
     }
     out.write(`${t.lime("ok")}\n`);
@@ -495,6 +497,38 @@ function ready(out: NodeJS.WriteStream, t: Theme, config: Config): void {
   // Nothing is on PATH after npx, and finding that out tomorrow is worse than
   // finding it out now.
   if (viaNpx()) out.write(`  ${INSTALL_HINT}\n\n`);
+}
+
+/**
+ * Known failures, turned into an instruction.
+ *
+ * The provider's own message says what is wrong and never what to do about it.
+ * "This API key is not scoped to a workspace" is accurate and leaves a
+ * first-time user with nowhere to go, which is the point at which people give
+ * up on a tool.
+ */
+export function advice(problem: string): string | undefined {
+  if (/anthropic-workspace-id|not scoped to a workspace/i.test(problem)) {
+    return (
+      "That key belongs to your organisation rather than to a workspace, so every\n" +
+      "request has to name one. Two ways out:\n\n" +
+      "  · Create a key inside a workspace at console.anthropic.com — Settings,\n" +
+      "    then Workspaces, then API keys from within the workspace. Simplest.\n\n" +
+      "  · Or keep this key and add the workspace id to .env:\n" +
+      "        ANTHROPIC_WORKSPACE_ID=wrkspc_...\n" +
+      "    The id is in the console URL when the workspace is open."
+    );
+  }
+  if (/401|invalid x-api-key|authentication_error/i.test(problem)) {
+    return "That key was rejected. Check it was copied whole, and that it hasn't been revoked.";
+  }
+  if (/credit balance|billing/i.test(problem)) {
+    return "The account has no credit. Add billing at console.anthropic.com, then try again.";
+  }
+  if (/ECONNREFUSED|fetch failed|ENOTFOUND/i.test(problem)) {
+    return "Nothing answered at that address. Check the URL, and that anything local is running.";
+  }
+  return undefined;
 }
 
 /** One small call, so a bad key fails here instead of three turns into a REPL. */

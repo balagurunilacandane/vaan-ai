@@ -59,7 +59,7 @@ jobs:
           npm init -y
           npm install /tmp/vaan-*.tgz
           ./node_modules/.bin/vaan --version
-          ./node_modules/.bin/vaan --help | grep -q "Vaan 0.1.3"
+          ./node_modules/.bin/vaan --help | grep -q "Vaan 0.1.4"
       - name: it refuses to hang when stdin is not a terminal
         run: |
           cd /tmp/clean
