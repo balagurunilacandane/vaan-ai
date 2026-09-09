@@ -5,9 +5,18 @@
 // is only ever decoration on top of a line that already says what it means. A
 // tool call prints its name whether or not the dot before it is green.
 //
-// 256-colour rather than truecolor: the palette below is close enough at 8-bit,
-// and 256 is supported by every terminal anyone still uses, including tmux and
-// Windows Terminal without extra configuration.
+// Only one absolute colour, and it is the brand accent.
+//
+// Everything else is an *attribute* — bold, dim — which the terminal renders
+// relative to whatever foreground the user has chosen. Fixed greys were the
+// first version and they were a bug: #5f6754 grey and #eef2e6 near-white are
+// legible on a dark background and close to invisible on a light one, so half
+// the interface disappeared for anyone not using the theme it was designed
+// against. An attribute cannot make that mistake, because it has no opinion
+// about the background.
+//
+// The rule that follows: colour marks things, it never carries them. Anything
+// you actually have to read is the terminal's own foreground.
 
 export interface Theme {
   lime(text: string): string;
@@ -21,12 +30,20 @@ export interface Theme {
 
 const code = (value: string) => (text: string): string => `[${value}m${text}[0m`;
 
+/** The accent. 256-colour 149 is the nearest 8-bit neighbour of #a3e635. */
+const LIME = "38;5;149";
+
 const COLOUR: Omit<Theme, "enabled"> = {
-  lime: code("38;5;149"),
-  bright: code("38;5;255"),
-  dim: code("38;5;243"),
-  faint: code("38;5;239"),
-  red: code("38;5;210"),
+  lime: code(LIME),
+  // Bold rather than a pale colour: emphasis that works on any background.
+  bright: code("1"),
+  // The dim attribute steps down from the user's foreground, whatever it is.
+  dim: code("2"),
+  // There is no readable third step, so faint is dim. Hierarchy comes from
+  // position and glyphs, not from three shades nobody can tell apart.
+  faint: code("2"),
+  // 203 rather than 210: still red on white, not just pink.
+  red: code("38;5;203"),
   bold: code("1"),
 };
 
@@ -59,8 +76,18 @@ export function createTheme(opts: ThemeOptions = {}): Theme {
   return { ...(on ? COLOUR : PLAIN), enabled: on };
 }
 
+/**
+ * The mark. Three rows of block characters that read as a cloud at any font
+ * size, using only ▄ █ ▀ — the three that render everywhere, including over
+ * ssh into a box with a font from 2004.
+ */
+export const LOGO = ["   ▄▄▄▄▄", " ▄████████▄", " ▀▀▀▀▀▀▀▀▀▀"];
+
 /** Marks a step the agent took. */
 export const STEP = "⏺";
+/** Marks the agent speaking, as opposed to a step it took. */
+export const SAYS = "●";
+
 /** Marks something waiting on you. */
 export const ASK = "⚠";
 /** Separates facts on one line. */

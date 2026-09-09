@@ -27,6 +27,8 @@ import { createSpinner } from "./spinner.js";
 import { render } from "./trace-cmd.js";
 import {
   ASK,
+  LOGO,
+  SAYS,
   createTheme,
   describeInput,
   DOT,
@@ -120,7 +122,7 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
         },
       });
       spinner.stop();
-      out.write(`${result.text}\n\n`);
+      out.write(`${t.lime(SAYS)} ${result.text}\n\n`);
       footer(out, session, lastRequestId, t);
     } catch (err) {
       spinner.stop();
@@ -154,27 +156,67 @@ function footer(
   out.write(`${t.faint(`  ${session.model}  ${DOT}  ${used}${id}`)}\n\n`);
 }
 
-function banner(out: NodeJS.WriteStream, opts: ReplOptions, session: Session, t: Theme): void {
-  const name = session.config.agentName.toLowerCase();
-  out.write(`\n  ${t.bold(t.lime(name))} ${t.dim(VERSION)}\n`);
+export interface BannerInput {
+  agentName: string;
+  version: string;
+  model: string;
+  sandbox: string;
+  workspace: string;
+  /** Anything the user should know before typing: warnings, flags, inbox. */
+  notes: string[];
+}
 
-  // One line of context rather than six lines of ticks: what it can see, what
-  // it can do to you, and whether it will remember. Everything else is /status.
+/**
+ * The masthead, as a string.
+ *
+ * Pure so it can be rendered without a terminal — which is how it gets tested,
+ * and how it got looked at while being designed. A banner you can only see by
+ * launching the whole REPL is a banner nobody checks on a light background.
+ */
+export function renderBanner(input: BannerInput, t: Theme): string {
+  // Logo on the left, three facts on the right: the shape every terminal tool
+  // that has to introduce itself converges on.
   const facts = [
-    opts.workspace.replace(homedir(), "~"),
-    opts.config.sandbox.name === "restricted" ? "sandboxed" : opts.config.sandbox.name,
-    opts.memory ? "memory on" : "memory off",
-    opts.trace ? "tracing on" : "tracing off",
+    `${t.bold(input.agentName)} ${t.dim(`v${input.version}`)}`,
+    `${input.model} ${t.dim(DOT)} ${input.sandbox} sandbox`,
+    input.workspace,
   ];
-  out.write(`  ${t.dim(facts.join(`  ${DOT}  `))}\n`);
 
+  const lines = ["", ...LOGO.map((row, index) => {
+    const fact = facts[index] ?? "";
+    return `  ${t.lime(row.padEnd(13))}${index === 0 ? fact : t.dim(fact)}`;
+  })];
+
+  if (input.notes.length > 0) {
+    lines.push("");
+    for (const note of input.notes) lines.push(`  ${t.red(ASK)} ${note}`);
+  }
+
+  lines.push("", `  ${t.dim("/help for commands")}`, "");
+  return `${lines.join("\n")}\n`;
+}
+
+function banner(out: NodeJS.WriteStream, opts: ReplOptions, session: Session, t: Theme): void {
   const notes = [...session.warnings];
+  if (!opts.memory) notes.push("memory off for this session");
+  if (!opts.trace) notes.push("tracing off for this session");
   if (opts.yes) notes.push("--yes: every permission is granted without asking");
   const pending = readInbox(opts.workspace).length;
   if (pending > 0) notes.push(`${pending} item${pending === 1 ? "" : "s"} in /inbox`);
-  for (const note of notes) out.write(`  ${t.red(ASK)} ${t.dim(note)}\n`);
 
-  out.write("\n");
+  out.write(
+    renderBanner(
+      {
+        agentName: session.config.agentName,
+        version: VERSION,
+        model: opts.model,
+        sandbox: opts.config.sandbox.name,
+        workspace: opts.workspace.replace(homedir(), "~"),
+        notes,
+      },
+      t,
+    ),
+  );
 }
 
 function open(opts: ReplOptions, rl: Interface, t: Theme): Session {

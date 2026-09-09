@@ -86,3 +86,20 @@ test("the diff stat counts the same lines the diff shows", () => {
 test("creating a file counts as all additions and no removals", () => {
   assert.deepEqual(diffStat("", "a\nb\n"), { added: 2, removed: 0 });
 });
+
+test("only the accent is an absolute colour", () => {
+  // The regression this guards: fixed greys and a fixed near-white are legible
+  // on a dark terminal and invisible on a light one. Emphasis has to be an
+  // attribute, which the terminal renders relative to its own foreground.
+  const t = createTheme({ isTTY: true, env: {} });
+  const escapes = (text: string): string[] => [...text.matchAll(/\x1b\[([0-9;]+)m/g)].map((m) => m[1] ?? "");
+
+  assert.deepEqual(escapes(t.bright("x")).slice(0, 1), ["1"], "bright must be bold");
+  assert.deepEqual(escapes(t.dim("x")).slice(0, 1), ["2"], "dim must be the dim attribute");
+  assert.deepEqual(escapes(t.faint("x")).slice(0, 1), ["2"], "faint must be the dim attribute");
+
+  for (const paint of [t.bright, t.dim, t.faint, t.bold]) {
+    assert.doesNotMatch(paint("x"), /38;5;/, "no fixed colour on text you have to read");
+  }
+  assert.match(t.lime("x"), /38;5;149/, "the accent stays the brand colour");
+});
