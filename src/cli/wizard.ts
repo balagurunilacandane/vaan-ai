@@ -267,26 +267,45 @@ async function askKey(
     out.write(`\n  Selected model: ${spec}\n\n  No API key required.\n`);
     return undefined;
   }
-  for (const candidate of [found.envKey, ...(found.altEnvKeys ?? [])]) {
-    if (opts.env[candidate]) {
-      out.write(`\n  ${candidate} is already set — skipping.\n`);
-      return candidate;
-    }
+  // An existing key is offered for replacement rather than silently skipped.
+  // Skipping makes `vaan init` a dead end for the one thing people re-run it
+  // for: the key expired, was rotated, or belongs to the wrong account.
+  const existing = [found.envKey, ...(found.altEnvKeys ?? [])].find(
+    (candidate) => opts.env[candidate],
+  );
+  if (existing) {
+    out.write(`\n  ${existing} is already set${fingerprint(opts.env[existing])}.\n`);
+    if (!(await askYesNo(rl, out, "  Replace it?", false))) return existing;
   }
 
   out.write(`\n  Selected model: ${spec}\n`);
-  const key = await askSecret(rl, out, `\n  ${label(name)} API key  ? `);
+  const key = await askSecret(
+    rl,
+    out,
+    `\n  ${existing ? "New " : ""}${label(name)} API key  ? `,
+  );
   if (!key) {
     out.write(`\n  No key, no calls. Set it and run \`${launchCommand()} init\` again.\n\n`);
     return false;
   }
   opts.env[found.envKey] = key;
+  // Clear any alternate name, or the old key could win on the next run.
+  for (const alternate of found.altEnvKeys ?? []) delete opts.env[alternate];
   updateEnvFile(workspace, { [found.envKey]: key });
   out.write(`  saved to .env as ${found.envKey}\n`);
   return found.envKey;
 }
 
 const label = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1);
+
+/**
+ * Enough of a key to tell which one it is, and not enough to be worth having.
+ * Without this, "already set" is unanswerable: set to what?
+ */
+function fingerprint(key: string | undefined): string {
+  if (!key || key.length < 8) return "";
+  return ` (…${key.slice(-4)})`;
+}
 
 // --- Steps 5 to 8 ------------------------------------------------------------
 
