@@ -35,7 +35,7 @@ import { updateEnvFile } from "./dotenv.js";
 import { CUSTOM_NOTE, DEFAULT_MODEL, SUGGESTED } from "./suggested.js";
 import { createTheme, DOT, type Theme } from "./theme.js";
 
-export const VERSION = "0.1.5";
+export const VERSION = "0.1.6";
 
 /**
  * Say back what was just chosen.

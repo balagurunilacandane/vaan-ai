@@ -11,7 +11,6 @@
 
 import { homedir } from "node:os";
 import { isAbsolute, relative } from "node:path";
-import { createInterface, type Interface } from "node:readline/promises";
 import { describeConfig, type Config } from "../config.js";
 import { clearInbox, readInbox } from "../inbox.js";
 import { createSession, type Session } from "../index.js";
@@ -23,6 +22,7 @@ import { activeGroups, GROUPS } from "../tools/index.js";
 import { printMemory } from "./memory-cmd.js";
 import { configFile } from "../paths.js";
 import { VERSION } from "./wizard.js";
+import { createPrompt, type Prompt } from "./editor.js";
 import { createSpinner } from "./spinner.js";
 import { render } from "./trace-cmd.js";
 import {
@@ -55,15 +55,28 @@ export interface ReplOptions {
 
 export async function runRepl(opts: ReplOptions): Promise<number> {
   const out = process.stdout;
-  const rl = createInterface({ input: process.stdin, output: out });
   const t = createTheme({ env: opts.env });
+
+  let live: Session | undefined;
+  const prompt = createPrompt({
+    input: process.stdin,
+    output: out,
+    theme: t,
+    hint: "/help for commands",
+    // Recomputed per draw: the token count moves while you are typing the
+    // next thing.
+    status: () =>
+      live ? `↑${tokens(live.usage.input)} ↓${tokens(live.usage.output)}` : "",
+    placeholder: "ask anything",
+  });
 
   let session: Session;
   try {
-    session = open(opts, rl, t);
+    session = open(opts, prompt, t);
+    live = session;
   } catch (err) {
     out.write(`\n  ${t.red(message(err))}\n\n`);
-    rl.close();
+    prompt.close();
     return 1;
   }
 
@@ -71,14 +84,17 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
 
   let lastRequestId = "";
   for (;;) {
-    const line = (await rl.question(`${t.lime(">")} `)).trim();
+    const line = await prompt.read();
+    // null is ctrl-d: leave the way /exit does.
+    if (line === null) break;
     if (!line) continue;
 
     if (line.startsWith("/")) {
       const [command = "", ...rest] = line.slice(1).split(/\s+/);
       if (command === "exit" || command === "quit") break;
       try {
-        session = await handle(command, rest, session, opts, rl, out, lastRequestId, t);
+        session = await handle(command, rest, session, opts, prompt, out, lastRequestId, t);
+        live = session;
       } catch (err) {
         out.write(`  ${t.red(message(err))}\n\n`);
       }
@@ -87,7 +103,9 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
 
     const controller = new AbortController();
     const interrupt = () => controller.abort();
-    rl.once("SIGINT", interrupt);
+    // Raw mode is off while the model works, so ctrl-c arrives as a signal.
+    // Caught here it cancels the turn; uncaught it would kill the session.
+    process.on("SIGINT", interrupt);
     const spinner = createSpinner({ out, theme: t, animate: out.isTTY === true });
     try {
       out.write("\n");
@@ -123,7 +141,7 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
       });
       spinner.stop();
       out.write(`${t.lime(SAYS)} ${result.text}\n\n`);
-      footer(out, session, lastRequestId, t);
+      footer(out, lastRequestId, t);
     } catch (err) {
       spinner.stop();
       out.write(
@@ -133,27 +151,25 @@ export async function runRepl(opts: ReplOptions): Promise<number> {
       );
     } finally {
       spinner.stop();
-      rl.off("SIGINT", interrupt);
+      process.off("SIGINT", interrupt);
     }
   }
 
   session.close();
-  rl.close();
+  prompt.close();
   return 0;
 }
 
-/** Model, tokens, and the request id — one dim line under each answer. */
-function footer(
-  out: NodeJS.WriteStream,
-  session: Session,
-  requestId: string,
-  t: Theme,
-): void {
-  // No percentage: Vaan has no allowlist of models and therefore no idea how
-  // big this one's context window is. A made-up denominator is worse than none.
-  const used = `↑${tokens(session.usage.input)} ↓${tokens(session.usage.output)}`;
-  const id = requestId ? `  ${DOT}  ${shortId(requestId)}` : "";
-  out.write(`${t.faint(`  ${session.model}  ${DOT}  ${used}${id}`)}\n\n`);
+/**
+ * The request id under each answer, so `/trace` has something to name.
+ *
+ * Tokens used to be here too and are not any more: they sit in the status line
+ * of the input frame, which is on screen the whole time. Printing them again
+ * after every answer was the same number twice.
+ */
+function footer(out: NodeJS.WriteStream, requestId: string, t: Theme): void {
+  if (!requestId) return;
+  out.write(`${t.dim(`  ${shortId(requestId)}`)}\n\n`);
 }
 
 export interface BannerInput {
@@ -219,7 +235,7 @@ function banner(out: NodeJS.WriteStream, opts: ReplOptions, session: Session, t:
   );
 }
 
-function open(opts: ReplOptions, rl: Interface, t: Theme): Session {
+function open(opts: ReplOptions, prompt: Prompt, t: Theme): Session {
   const out = process.stdout;
 
   return createSession({
@@ -241,7 +257,7 @@ function open(opts: ReplOptions, rl: Interface, t: Theme): Session {
       out.write(`${t.dim(`  ${request.capability.toUpperCase()}${detail}`)}\n`);
       out.write(`${t.faint(`  ${reason}`)}\n`);
       const answer = (
-        await rl.question(`  ${t.dim("allow?")}  ${t.bright("[y]")} yes  ${t.bright("[n]")} no  `)
+        await prompt.ask(`  ${t.dim("allow?")}  ${t.bright("[y]")} yes  ${t.bright("[n]")} no  `)
       )
         .trim()
         .toLowerCase();
@@ -260,7 +276,7 @@ function open(opts: ReplOptions, rl: Interface, t: Theme): Session {
 
       for (;;) {
         const answer = (
-          await rl.question(
+          await prompt.ask(
             `  ${t.dim("apply this change?")}  ${t.bright("[y]")} yes  ` +
               `${t.bright("[d]")} diff  ${t.bright("[n]")} no  `,
           )
@@ -338,7 +354,7 @@ async function handle(
   args: string[],
   session: Session,
   opts: ReplOptions,
-  rl: Interface,
+  prompt: Prompt,
   out: NodeJS.WriteStream,
   lastRequestId: string,
   t: Theme,
@@ -357,7 +373,7 @@ async function handle(
         return session;
       }
       const next = args[0] as string;
-      const replacement = open({ ...opts, model: next }, rl, t);
+      const replacement = open({ ...opts, model: next }, prompt, t);
       session.close();
       opts.model = next;
       out.write(`\n  ✓ ${next}\n\n`);
@@ -383,7 +399,7 @@ async function handle(
       if (!Number.isInteger(id)) {
         out.write("\n");
         for (const fact of facts) out.write(`    ${String(fact.id).padStart(3)}  ${fact.text}\n`);
-        id = Number((await rl.question("\n  Forget which?  ")).trim());
+        id = Number((await prompt.ask(`\n  ${t.dim("forget which?")}  `)).trim());
       }
       const removed = Number.isInteger(id) ? await session.memory.forget(opts.workspace, id) : 0;
       out.write(removed > 0 ? `  forgot #${id}\n\n` : "  no such fact\n\n");
